@@ -1,14 +1,90 @@
 # Radio Campus
 
+Radio inteligente e interactiva para el campus. La comunidad vota desde el teléfono (vía QR) cuál de dos canciones sonará después; las opciones se eligen según la hora, la temperatura y el calendario institucional, y entre canciones se reproducen anuncios con voz sintética.
+
+| Interfaz | Ruta | Uso |
+|---|---|---|
+| Pantalla pública | `/screen?key=SCREEN_KEY` | Pantalla horizontal del campus; reproduce la música y muestra la ronda, QR, temporizador, resultados y avisos |
+| Votación móvil | `/vote` | Página que abre el QR; no requiere instalar nada |
+| Panel de administración | `/admin` | Catálogo, reglas, eventos, anuncios, control en vivo, estadísticas y ajustes |
+
 ## Requisitos
-- Node.js 18.11 o superior
-- PostgreSQL
 
-## Configuración
-1. Crea `.env` en la raíz del proyecto y configura la conexión a PostgreSQL y las claves.
-2. Para importar playlists públicas de YouTube, habilita YouTube Data API v3 en Google Cloud y agrega `YOUTUBE_API_KEY=tu_clave` a `.env`. La clave se usa solo en el servidor.
-3. Las canciones con audio licenciado pueden registrarse usando su URL directa HTTP/HTTPS; confirma que tu licencia permita reproducirlas públicamente.
-4. Ejecuta `npm run build` para instalar dependencias y compilar el cliente.
-5. Ejecuta `npm start` para iniciar el servidor.
+- Node.js 18.11 o superior (probado con Node 22)
+- PostgreSQL 13 o superior
+- Opcional: clave de **YouTube Data API v3** (importar playlists) y de **Google Cloud Text-to-Speech** (voz de anuncios)
 
-Para desarrollo, usa `npm run dev:server` y `npm run dev:client` en terminales separadas.
+## Instalación y ejecución local
+
+```bash
+git clone https://github.com/wa1o/radio-campus.git
+cd radio-campus
+cp .env.example .env          # edita los valores (ver abajo)
+createdb radio_campus         # o créala desde pgAdmin
+npm run build                 # instala dependencias y compila el cliente
+npm start                     # http://localhost:3000
+```
+
+Las tablas se crean solas al arrancar (`server/src/schema.sql`) y se da de alta el administrador definido en `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
+
+Para desarrollar con recarga automática, en dos terminales:
+
+```bash
+npm run dev:server   # API + Socket.IO en :3000
+npm run dev:client   # Vite en :5173 (redirige /api y /socket.io al servidor)
+```
+
+### Variables de entorno
+
+Todas se describen en [`.env.example`](.env.example). Las obligatorias son `DATABASE_URL`, `JWT_SECRET` y `SCREEN_KEY`; el servidor no arranca sin ellas. Las claves nunca se envían al navegador ni se guardan en el repositorio (`.env` está en `.gitignore`).
+
+## Pruebas
+
+```bash
+cd server
+npm test                                                        # unitarias (algoritmo contextual, YouTube)
+TEST_DATABASE_URL=postgres://usuario:clave@localhost/radio_test npm run test:e2e   # ronda completa (¡vacía esa base!)
+```
+
+La prueba de integración levanta el servidor, simula la pantalla y tres teléfonos, y comprueba la ronda completa, el cambio de contexto, los anuncios, la persistencia tras reiniciar y el respaldo. Resultados en [docs/PRUEBAS.md](docs/PRUEBAS.md).
+
+## Despliegue
+
+El repositorio incluye un blueprint de Render (`render.yaml`) que crea el servicio web y la base PostgreSQL con HTTPS. Pasos completos y alternativas en [docs/INSTALACION_Y_DESPLIEGUE.md](docs/INSTALACION_Y_DESPLIEGUE.md).
+
+## Documentación
+
+- [Arquitectura y diagrama de flujo](docs/ARQUITECTURA.md)
+- [Base de datos](docs/BASE_DE_DATOS.md)
+- [Instalación y despliegue](docs/INSTALACION_Y_DESPLIEGUE.md)
+- [Manual del administrador](docs/MANUAL_ADMIN.md)
+- [Servicios externos y costos](docs/SERVICIOS_Y_COSTOS.md)
+- [Pruebas y evidencias](docs/PRUEBAS.md)
+
+## Estructura
+
+```
+radio-campus/
+├── client/                 React + Vite (pantalla, votación y panel)
+│   └── src/pages/          Screen.jsx · Vote.jsx · Admin.jsx
+├── server/
+│   ├── src/
+│   │   ├── index.js        Express + Socket.IO, arranque y health check
+│   │   ├── director.js     Programación: rondas, votos, cola, anuncios (estado central)
+│   │   ├── context.js      Algoritmo de selección contextual
+│   │   ├── routes/         API pública y de administración
+│   │   ├── backup.js       Exportar / restaurar configuración
+│   │   ├── tts.js          Google Text-to-Speech
+│   │   ├── youtube.js      Importación de playlists
+│   │   └── schema.sql      Esquema de la base de datos
+│   └── test/               Pruebas unitarias y de integración
+├── docs/                   Manuales y documentación técnica
+├── render.yaml             Despliegue en Render
+└── .env.example            Variables de entorno sin secretos
+```
+
+## Funciones simuladas o con limitaciones
+
+- **Simulación de contexto**: el panel permite fijar hora, temperatura o evento para demostraciones. Cuando está activa, el panel lo indica en rojo. Debe quedar vacía en operación normal.
+- **Pruebas automáticas**: la pantalla se simula con un cliente Socket.IO y el audio de anuncios se inserta directamente; la reproducción real en YouTube y la voz de Google TTS se verifican manualmente en el navegador (checklist en `docs/PRUEBAS.md`).
+- **Licencias musicales**: la reproducción pública en el campus requiere los permisos correspondientes; ver `docs/SERVICIOS_Y_COSTOS.md`.

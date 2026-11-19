@@ -7,6 +7,7 @@ export const DEFAULTS = {
   recent_window: 10,
   excluded_restrictions: ['explicit'],
   fallback_playlist_id: null,
+  context_override: null,
 };
 
 export async function getSettings() {

@@ -104,8 +104,9 @@ function ScreenLive({ screenKey }) {
       const el = document.createElement('div');
       ytBox.current.appendChild(el);
       player.current = new YT.Player(el, {
-        width: 320,
-        height: 180,
+        // Las políticas del reproductor de YouTube exigen un tamaño mínimo de 200×200 px y que sea visible.
+        width: 356,
+        height: 200,
         playerVars: { autoplay: 1, controls: 0, rel: 0, playsinline: 1 },
         events: {
           onReady: () => apply(cmd.current),

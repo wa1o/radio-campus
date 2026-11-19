@@ -1,0 +1,44 @@
+# Blueprint de Render: servicio web + PostgreSQL administrado.
+# En Render: New > Blueprint > selecciona este repositorio.
+services:
+  - type: web
+    name: radio-campus
+    runtime: node
+    plan: starter
+    buildCommand: npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: radio-campus-db
+          property: connectionString
+      - key: PGSSL
+        value: "true"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SCREEN_KEY
+        generateValue: true
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: GOOGLE_TTS_API_KEY
+        sync: false
+      - key: TTS_LANGUAGE
+        value: es-US
+      - key: STATION_TZ
+        value: America/Mexico_City
+      - key: STATION_LAT
+        value: "22.2553"
+      - key: STATION_LON
+        value: "-97.8686"
+
+databases:
+  - name: radio-campus-db
+    plan: basic-256mb
+    databaseName: radio_campus

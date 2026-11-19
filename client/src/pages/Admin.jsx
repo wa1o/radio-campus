@@ -250,6 +250,7 @@ const ruleFields = [
   { path: 'condition.temp_min', label: 'Temperatura mínima °C', type: 'number' },
   { path: 'condition.temp_max', label: 'Temperatura máxima °C', type: 'number' },
   { path: 'condition.event_type', label: 'Con evento activo', type: 'select', options: [['', '—'], ...EVENT_TYPES] },
+  { path: 'condition.exclusive', label: 'Exclusiva (ignora las reglas de menor prioridad)', type: 'checkbox', default: false },
   { path: 'filters.genres', label: 'Géneros permitidos', type: 'tags' },
   { path: 'filters.energy', label: 'Energías permitidas (low, medium, high)', type: 'tags' },
   { path: 'filters.moods', label: 'Ambientes permitidos', type: 'tags' },
@@ -278,7 +279,8 @@ function describeCondition(c) {
     (c.temp_min != null || c.temp_max != null) && `${c.temp_min ?? '…'}–${c.temp_max ?? '…'} °C`,
     c.event_type && `evento: ${EVENT_LABEL[c.event_type] ?? c.event_type}`,
   ].filter(Boolean);
-  return parts.join(' · ') || 'siempre';
+  const text = parts.join(' · ') || 'siempre';
+  return c.exclusive ? `${text} · exclusiva` : text;
 }
 
 function describeFilters(f) {
@@ -331,6 +333,8 @@ function Control() {
           <p>Pantalla: {state.screenOnline ? 'conectada' : 'desconectada'}</p>
           <p>Regla activa: {state.ruleName ?? '—'}</p>
           {ctx && <p>Contexto: {ctx.hhmm} · {ctx.temp ?? '—'} °C · {ctx.eventTypes.map(t => EVENT_LABEL[t] ?? t).join(', ') || 'sin eventos'}</p>}
+          {ctx?.simulated && <p className="error">Contexto simulado activo (Ajustes)</p>}
+          {ctx?.degraded && <p className="error">Sin datos de clima o calendario: se usa la lista de respaldo</p>}
         </div>
         <div className="card">
           <h3>Sonando</h3>
@@ -357,6 +361,7 @@ function Control() {
           ? <button onClick={() => act('resume')}>Reanudar</button>
           : <button onClick={() => act('pause')}>Pausar</button>}
         <button onClick={() => act('skip')}>Saltar</button>
+        <button onClick={() => act('reroll')} title="Descarta la ronda abierta y propone dos opciones con el contexto actual">Regenerar ronda</button>
         <select value={next} onChange={e => setNext(e.target.value)}>
           <option value="">Elegir siguiente canción…</option>
           {songs.filter(s => s.active).map(s => <option key={s.id} value={s.id}>{s.title} — {s.artist}</option>)}
@@ -494,7 +499,13 @@ function Settings() {
   const [s, setS] = useState(null);
   const [playlists, setPlaylists] = useState([]);
   const [msg, setMsg] = useState(null);
-  const fromServer = x => ({ ...x, excluded_restrictions: x.excluded_restrictions.join(', ') });
+  const fromServer = x => ({
+    ...x,
+    excluded_restrictions: x.excluded_restrictions.join(', '),
+    sim_hhmm: x.context_override?.hhmm ?? '',
+    sim_temp: x.context_override?.temp ?? '',
+    sim_event: x.context_override?.event_type ?? '',
+  });
 
   useEffect(() => {
     api('/admin/settings').then(x => setS(fromServer(x))).catch(e => setMsg(e.message));
@@ -516,6 +527,9 @@ function Settings() {
           no_votes: s.no_votes,
           excluded_restrictions: s.excluded_restrictions.split(',').map(x => x.trim()).filter(Boolean),
           fallback_playlist_id: s.fallback_playlist_id ? Number(s.fallback_playlist_id) : null,
+          context_override: s.sim_hhmm || s.sim_temp !== '' || s.sim_event
+            ? { hhmm: s.sim_hhmm || null, temp: s.sim_temp === '' ? null : Number(s.sim_temp), event_type: s.sim_event || null }
+            : null,
         },
       });
       setS(fromServer(out));
@@ -550,9 +564,61 @@ function Settings() {
           {playlists.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       </label>
+      <h3>Simulación de contexto (pruebas y demostraciones)</h3>
+      <p className="muted">Deja vacío para usar los datos reales. Se aplica desde la siguiente ronda o al pulsar «Regenerar ronda» en Control.</p>
+      <label>Hora simulada<input type="time" value={s.sim_hhmm} onChange={set('sim_hhmm')} /></label>
+      <label>Temperatura simulada °C<input type="number" step="any" value={s.sim_temp} onChange={set('sim_temp')} /></label>
+      <label>Evento simulado
+        <select value={s.sim_event} onChange={set('sim_event')}>
+          <option value="">— ninguno —</option>
+          {EVENT_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+      </label>
       {msg && <p className="muted">{msg}</p>}
       <button type="submit">Guardar</button>
+      <Backup />
     </form>
+  );
+}
+
+function Backup() {
+  const [msg, setMsg] = useState(null);
+
+  const download = async () => {
+    try {
+      const blob = await api('/admin/backup', { blob: true });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `radio-campus-respaldo-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      setMsg('Respaldo descargado');
+    } catch (err) {
+      setMsg(err.message);
+    }
+  };
+
+  const restore = async e => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !confirm('Se actualizarán canciones, reglas, eventos, anuncios y ajustes con el contenido del respaldo. ¿Continuar?')) return;
+    try {
+      const out = await api('/admin/restore', { method: 'POST', body: JSON.parse(await file.text()) });
+      setMsg(`Restaurado: ${Object.entries(out.counts).map(([k, v]) => `${k} ${v}`).join(', ')}. Recarga la página para ver los cambios.`);
+    } catch (err) {
+      setMsg(err.message);
+    }
+  };
+
+  return (
+    <div className="backup">
+      <h3>Respaldo de configuración</h3>
+      <p className="muted">Incluye catálogo, listas, reglas, eventos, anuncios (con su audio) y ajustes. No incluye administradores ni historial.</p>
+      <div className="row">
+        <button type="button" onClick={download}>Descargar respaldo</button>
+        <label className="button secondary">Restaurar desde archivo<input type="file" accept="application/json" hidden onChange={restore} /></label>
+      </div>
+      {msg && <p className="muted">{msg}</p>}
+    </div>
   );
 }
 

@@ -95,7 +95,8 @@ tbody tr:hover { background: #fffaf5; }
 .screen-side h3 { align-self: flex-start; margin: .8vw 0 0; color: #ffb36b; font-size: clamp(17px, 1.5vw, 25px); }
 .screen-side ul { align-self: stretch; margin: 0; padding-left: 1.2vw; font-size: clamp(12px, 1.1vw, 18px); }
 .player-source { margin: 0; color: #ffd1a8; font-size: 13px; }
-.yt-box { width: min(100%, 320px); min-height: 180px; }
+.yt-box { width: 356px; max-width: 100%; min-height: 200px; }
+.yt-box iframe { display: block; min-width: 200px; min-height: 200px; }
 
 @media (max-width: 860px) {
   .import-card { grid-template-columns: 1fr; }
@@ -116,3 +117,9 @@ tbody tr:hover { background: #fffaf5; }
   .screen-side { display: flex; }
   .screen-side ul { align-self: stretch; }
 }
+label.button { display: inline-flex; align-items: center; padding: 10px 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 650; }
+label.button.secondary { background: #fff0e2; color: #76350f; }
+.backup { margin-top: 18px; padding-top: 14px; border-top: 1px solid #f1dcc8; }
+.form > h3, .form > p.muted, .form > .backup { grid-column: 1 / -1; }
+.form > h3 { margin: 12px 0 0; }
+.backup .row { justify-content: flex-start; gap: 10px; }

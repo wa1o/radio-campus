@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import cookieParser from 'cookie-parser';
 import { Server } from 'socket.io';
-import { migrate } from './db.js';
+import { migrate, query } from './db.js';
 import { seedAdmin } from './auth.js';
 import { Director } from './director.js';
 import publicRoutes from './routes/public.js';
@@ -13,6 +13,7 @@ import adminRoutes from './routes/admin.js';
 
 const app = express();
 app.set('trust proxy', 1);
+app.use('/api/admin/restore', express.json({ limit: '25mb' }));
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 
@@ -20,6 +21,14 @@ const server = http.createServer(app);
 const io = new Server(server);
 const director = new Director(io);
 
+app.get('/api/health', async (_req, res) => {
+  try {
+    await query('SELECT 1');
+    res.json({ ok: true, db: true, screenOnline: director.screenOnline, phase: director.phase, uptime: Math.round(process.uptime()) });
+  } catch {
+    res.status(503).json({ ok: false, db: false });
+  }
+});
 app.use('/api', publicRoutes(director));
 app.use('/api/admin', adminRoutes(director));
 

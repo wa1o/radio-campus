@@ -4,6 +4,7 @@ import { requireAdmin } from '../auth.js';
 import { getSettings, saveSettings } from '../settings.js';
 import { synthesize } from '../tts.js';
 import { importYouTubePlaylist } from '../youtube.js';
+import { exportBackup, importBackup } from '../backup.js';
 
 const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const httpError = (status, message) => Object.assign(new Error(message), { status, expose: true });
@@ -155,7 +156,27 @@ export default function adminRoutes(director) {
   }));
 
   r.get('/settings', wrap(async (_req, res) => res.json(await getSettings())));
-  r.put('/settings', wrap(async (req, res) => res.json(await saveSettings(req.body || {}))));
+  r.put('/settings', wrap(async (req, res) => {
+    const body = req.body || {};
+    const o = body.context_override;
+    if (o != null) {
+      if (typeof o !== 'object') throw httpError(400, 'Simulación de contexto no válida');
+      if (o.hhmm && !/^([01]\d|2[0-3]):[0-5]\d$/.test(o.hhmm)) throw httpError(400, 'La hora simulada debe tener formato HH:MM');
+      if (o.temp != null && o.temp !== '' && !Number.isFinite(Number(o.temp))) throw httpError(400, 'La temperatura simulada debe ser un número');
+    }
+    res.json(await saveSettings(body));
+  }));
+
+  r.get('/backup', wrap(async (_req, res) => {
+    const data = await exportBackup();
+    res.setHeader('Content-Disposition', `attachment; filename="radio-campus-respaldo-${data.exported_at.slice(0, 10)}.json"`);
+    res.json(data);
+  }));
+  r.post('/restore', wrap(async (req, res) => {
+    const counts = await importBackup(req.body);
+    await director.infoChanged();
+    res.json({ ok: true, counts });
+  }));
 
   r.post('/control/:action', wrap(async (req, res) => {
     const actions = {
@@ -163,6 +184,7 @@ export default function adminRoutes(director) {
       resume: () => director.resume(),
       skip: () => director.skip(),
       next: () => director.setNext(Number(req.body?.songId)),
+      reroll: () => director.reroll(),
     };
     const action = actions[req.params.action];
     if (!action) return res.sendStatus(404);

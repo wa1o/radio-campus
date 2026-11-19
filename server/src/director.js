@@ -68,7 +68,13 @@ export class Director {
       forcedNext: pub(this.forcedNext),
       announcement: this.announcement,
       ruleName: this.ruleName,
-      context: this.context && { hhmm: this.context.hhmm, temp: this.context.temp, eventTypes: this.context.eventTypes },
+      context: this.context && {
+        hhmm: this.context.hhmm,
+        temp: this.context.temp,
+        eventTypes: this.context.eventTypes,
+        simulated: this.context.simulated,
+        degraded: !this.context.weatherOk || !this.context.eventsOk,
+      },
       info: this.info,
       lastError: this.lastError,
     };
@@ -356,6 +362,21 @@ export class Director {
     if (this.phase === 'playing') await this.songEnded(this.playId);
     else if (this.phase === 'announcement') await this.announcementEnded(this.announcement.id);
     else if (this.screenOnline) await this.bootstrap();
+  }
+
+  // Descarta la ronda abierta y propone dos opciones nuevas con el contexto
+  // actual (útil tras cambiar reglas, eventos o la simulación de contexto).
+  async reroll() {
+    if (this.phase !== 'playing') throw httpError(409, 'Solo se puede regenerar la ronda mientras suena una canción');
+    if (this.round?.status === 'open') {
+      clearTimeout(this.roundTimer);
+      await query("UPDATE rounds SET status = 'aborted', closed_at = now(), resolution = 'regenerada por el administrador' WHERE id = $1", [this.round.id]);
+    } else if (this.round?.status === 'closed') {
+      throw httpError(409, 'La ronda ya cerró; la ganadora sonará a continuación');
+    }
+    this.round = null;
+    this.remainingMs = null;
+    await this.openRound();
   }
 
   async setNext(songId) {
