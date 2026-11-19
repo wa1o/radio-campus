@@ -333,3 +333,13 @@ td.actions button + button { margin-left: 6px; }
 }
 .caption { position: fixed; left: 2.6vw; right: 2.6vw; bottom: 2.4vw; z-index: 10; box-shadow: 0 1vw 3vw #000a; animation: caption-in .5s cubic-bezier(.2, .8, .2, 1); }
 @keyframes caption-in { from { transform: translateY(140%); } }
+
+/* Botón para desbloquear el audio: siempre visible, encima de todo. */
+.unlock { position: fixed; bottom: 2.4vw; left: 50%; z-index: 20; display: flex; align-items: center; gap: 1.2vw; padding: .8vw .8vw .8vw 1.6vw; transform: translateX(-50%); border-radius: 99px; background: var(--s-ink, #fff7f0); color: var(--ink); box-shadow: 0 1vw 3vw #000c; }
+.unlock p { margin: 0; order: -1; font-size: clamp(14px, 1vw, 18px); font-weight: 600; }
+.unlock .screen-audio-button { width: auto; padding: 14px 26px; border-radius: 99px; background: var(--signal); color: #fff; font-size: clamp(16px, 1.2vw, 22px); }
+.screen-side .yt-box { flex: none; width: 100%; max-width: none; aspect-ratio: 16 / 9; min-height: 200px; }
+.screen-side .yt-box iframe { width: 100% !important; height: 100% !important; }
+.ticket { flex-direction: row; gap: 1.2vw; padding: 1.2vw; }
+.ticket svg { width: clamp(120px, 9vw, 200px); flex: none; }
+.ticket p { text-align: left; }

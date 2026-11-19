@@ -324,6 +324,14 @@ function ScreenLive({ screenKey }) {
         </div>
       </header>
 
+      {state?.phase === 'playing' && !audioUnlocked && (
+        <div className="unlock" role="dialog" aria-label="Activar audio">
+          <button className="screen-audio-button" disabled={state.nowPlaying?.provider !== 'licensed_audio' && !playerReady} onClick={activateAudio}>
+            {state.nowPlaying?.provider !== 'licensed_audio' && !playerReady ? 'Cargando reproductor…' : 'Activar audio'}
+          </button>
+          <p>El navegador necesita un clic para reproducir sonido.</p>
+        </div>
+      )}
       {speaking && (
         <div className={`caption ${speaking.kind === 'dj' ? 'dj' : ''}`} role="status" aria-live="polite">
           <span className="caption-who">{speaking.kind === 'dj' ? 'Locutor' : 'Aviso'}</span>
@@ -377,16 +385,12 @@ function ScreenLive({ screenKey }) {
         </section>
 
         <aside className="screen-side">
+          {/* El reproductor va arriba: YouTube exige que sea visible para reproducir. */}
+          <div ref={ytBox} className="yt-box" />
           <div className="ticket">
-            <QRCodeSVG value={voteUrl} size={240} marginSize={0} bgColor="#ffffff" fgColor="#1c1310" />
+            <QRCodeSVG value={voteUrl} size={200} marginSize={0} bgColor="#ffffff" fgColor="#1c1310" />
             <p><strong>Escanea y vota</strong>{voteUrl.replace(/^https?:\/\//, '')}</p>
           </div>
-          <div ref={ytBox} className="yt-box" />
-          {state?.phase === 'playing' && !audioUnlocked && (
-            <button className="screen-audio-button" disabled={state.nowPlaying?.provider !== 'licensed_audio' && !playerReady} onClick={activateAudio}>
-              {state.nowPlaying?.provider !== 'licensed_audio' && !playerReady ? 'Cargando reproductor…' : 'Activar audio'}
-            </button>
-          )}
           {state?.nowPlaying?.provider === 'licensed_audio' && <p className="player-source">Audio licenciado</p>}
           {!!state?.info.events.length && (
             <section className="board">
