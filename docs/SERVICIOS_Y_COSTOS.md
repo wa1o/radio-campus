@@ -8,7 +8,6 @@ Precios consultados en noviembre de 2026, en dólares estadounidenses. Verifica 
 |---|---|---|---|
 | Render: servicio web Starter | Servidor Node.js, HTTPS, despliegue desde GitHub | Cuenta Render con tarjeta | US$7 |
 | Render: PostgreSQL Basic-256mb | Base de datos persistente | Misma cuenta | US$6 + almacenamiento (US$0.30/GB) |
-| Google Cloud Text-to-Speech | Voz de los anuncios | Proyecto de Google Cloud con facturación activa + clave de API | US$0 dentro de la capa gratuita |
 | YouTube IFrame Player | Reproducción de la música en la pantalla | Ninguna | US$0 |
 | YouTube Data API v3 | Importar playlists desde el panel | Clave de API en el mismo proyecto de Google Cloud | US$0 (cuota diaria gratuita) |
 | Open-Meteo | Temperatura local | Ninguna (sin clave) | US$0 para uso no comercial |
@@ -25,18 +24,16 @@ Precios consultados en noviembre de 2026, en dólares estadounidenses. Verifica 
 - El servicio web gratuito se suspende tras 15 minutos sin tráfico y tarda en reactivarse, lo que desconectaría la pantalla. No usarlo en operación.
 - Limitación del sistema: debe correr **una sola instancia**; no activar escalado horizontal.
 
-### Google Cloud Text-to-Speech
+### Voz de los anuncios
 
-- Para usar Text-to-Speech hay que habilitar la facturación; se cobra automáticamente solo lo que exceda los caracteres gratuitos del mes.
-- Capa gratuita: las voces Standard incluyen 4 millones de caracteres gratis al mes; las Neural2 incluyen 1 millón y después cuestan US$16 por millón.
-- El audio se genera **una sola vez** por anuncio y se guarda en la base; reproducirlo no vuelve a cobrar. Un anuncio típico tiene 150–300 caracteres, así que el consumo real es de unos miles de caracteres al mes.
-- Recomendación: crear una alerta de presupuesto en Google Cloud (p. ej. US$1).
+- Los anuncios usan la síntesis de voz integrada en el navegador de la pantalla, sin una API de pago ni una clave del servidor.
+- La voz en español disponible depende del sistema operativo y navegador de la pantalla; conviene probarla antes de operar.
 
 ### YouTube
 
 - El reproductor incrustado tiene reglas: tamaño mínimo y no reproducir automáticamente hasta que el reproductor esté visible en más de la mitad. La pantalla muestra el reproductor a 356×200 px para cumplirlas.
 - Las políticas de desarrollador prohíben permitir la reproducción en segundo plano del reproductor de YouTube, por eso el reproductor debe permanecer visible en la pantalla.
-- YouTube Data API: cuota gratuita de 10,000 unidades diarias por proyecto; importar una playlist de 500 videos consume alrededor de 11 unidades.
+- YouTube Data API: cuota gratuita de 10,000 unidades diarias por proyecto; importar playlists consulta además la clasificación por edad en grupos de hasta 50 videos.
 - Algunos videos no permiten inserción o están bloqueados por región; el sistema los salta y registra el error.
 
 ### Open-Meteo

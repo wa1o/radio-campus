@@ -1,9 +1,15 @@
 import { query } from './db.js';
 import { getSettings } from './settings.js';
-import { pickCandidates, fallbackSongs, localClock, inTimeRange } from './context.js';
+import { pickCandidates, fallbackSongs, filterExcludedRestrictions, localClock, inTimeRange } from './context.js';
 
 const RETRY_MS = 30_000;
-const pub = s => (s ? { id: s.id, title: s.title, artist: s.artist, provider: s.provider || 'youtube' } : null);
+const pub = s => (s ? {
+  id: s.id,
+  title: s.title,
+  artist: s.artist,
+  provider: s.provider || 'youtube',
+  thumbnailUrl: (s.provider || 'youtube') === 'youtube' ? `https://i.ytimg.com/vi/${s.stream_ref}/hqdefault.jpg` : null,
+} : null);
 const httpError = (status, message) => Object.assign(new Error(message), { status, expose: true });
 
 export class Director {
@@ -99,7 +105,7 @@ export class Director {
       };
     }
     if (this.phase === 'announcement') {
-      return { type: 'announcement', id: this.announcement.id, url: `/api/announcements/${this.announcement.id}/audio`, paused: this.paused };
+      return { type: 'announcement', id: this.announcement.id, text: this.announcement.text, paused: this.paused };
     }
     return { type: 'stop' };
   }
@@ -155,6 +161,7 @@ export class Director {
     this.playId = rows[0].id;
     this.nowPlaying = song;
     this.phase = 'playing';
+    this.lastError = null;
     this.announcement = null;
     this.sendScreen(this.currentCommand());
   }
@@ -236,7 +243,8 @@ export class Director {
   async resolveNoVotes(settings, r) {
     if (settings.no_votes === 'fallback') {
       const exclude = new Set([...r.candidates.map(c => c.id), this.nowPlaying?.id]);
-      const pool = (await fallbackSongs(settings, exclude)).filter(s => !exclude.has(s.id));
+      const pool = filterExcludedRestrictions(await fallbackSongs(settings, exclude), settings.excluded_restrictions)
+        .filter(s => !exclude.has(s.id));
       if (pool.length) return { winner: pool[Math.floor(Math.random() * pool.length)], resolution: 'sin votos: respaldo' };
     }
     return { winner: r.candidates[Math.floor(Math.random() * 2)], resolution: 'sin votos: aleatorio' };
@@ -279,7 +287,7 @@ export class Director {
   async dueAnnouncement() {
     const { rows } = await query(`
       SELECT a.id, a.text, a.hour_from, a.hour_to FROM announcements a
-      WHERE a.status = 'approved' AND a.audio IS NOT NULL
+      WHERE a.status = 'approved'
         AND (a.valid_from IS NULL OR a.valid_from <= now())
         AND (a.valid_to IS NULL OR a.valid_to >= now())
         AND (SELECT count(*) FROM plays p WHERE p.started_at > COALESCE(a.last_played_at, '-infinity')) >= a.every_n_songs

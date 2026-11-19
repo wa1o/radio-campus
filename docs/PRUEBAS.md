@@ -54,7 +54,7 @@ Elementos que la prueba automática simula y deben verificarse a mano con la pan
 | 3 | Intentar votar dos veces desde el mismo teléfono | Mensaje «Ya votaste en esta ronda» | |
 | 4 | Esperar el fin del temporizador | La pantalla muestra la ganadora; al terminar la canción suena esa canción | |
 | 5 | Ajustes → simular evento Exámenes → Control → *Regenerar ronda* | Las nuevas opciones son de la regla de exámenes | |
-| 6 | Crear anuncio → *Generar voz* → *Escuchar* → *Aprobar* (frecuencia 1) | Al terminar la canción se oye el anuncio y luego la siguiente canción | |
+| 6 | Crear anuncio → *Probar voz* → *Aprobar* (frecuencia 1) | Al terminar la canción la pantalla lee el anuncio y luego sigue con la siguiente canción | |
 | 7 | Cambiar la duración de la ronda y recargar el panel | El valor se conserva | |
 | 8 | Desconectar la red de la pantalla 10 s y reconectar | Indicador «Sin conexión», reconexión automática y reproducción continúa | |
 | 9 | *Pausar* y *Reanudar* desde el panel | Música y temporizador se detienen y continúan | |

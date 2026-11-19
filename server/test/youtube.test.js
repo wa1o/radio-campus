@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { normalizePlaylistItems, parseYouTubePlaylistId } from '../src/youtube.js';
+import { markAgeRestrictedTracks, normalizePlaylistItems, parseYouTubePlaylistId } from '../src/youtube.js';
 
 test('accepts playlist URLs from YouTube and YouTube Music', () => {
   assert.equal(parseYouTubePlaylistId('https://www.youtube.com/playlist?list=PLabc_123'), 'PLabc_123');
@@ -24,6 +24,21 @@ test('normalizes playlist items and skips unavailable or duplicate videos', () =
     title: 'Canción',
     artist: 'Canal',
     stream_ref: 'abcdefghijk',
+    restrictions: [],
     active: true,
   }]);
+});
+
+test('marks only YouTube age-restricted videos as explicit', () => {
+  const tracks = [
+    { stream_ref: 'abcdefghijk', restrictions: [] },
+    { stream_ref: 'lmnopqrstuv', restrictions: [] },
+  ];
+  assert.deepEqual(markAgeRestrictedTracks(tracks, [
+    { id: 'abcdefghijk', contentDetails: { contentRating: { ytRating: 'ytAgeRestricted' } } },
+    { id: 'lmnopqrstuv', contentDetails: { contentRating: { ytRating: 'ytGeneral' } } },
+  ]), [
+    { stream_ref: 'abcdefghijk', restrictions: ['explicit'] },
+    { stream_ref: 'lmnopqrstuv', restrictions: [] },
+  ]);
 });

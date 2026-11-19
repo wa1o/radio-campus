@@ -12,7 +12,7 @@ Radio inteligente e interactiva para el campus. La comunidad vota desde el telé
 
 - Node.js 18.11 o superior (probado con Node 22)
 - PostgreSQL 13 o superior
-- Opcional: clave de **YouTube Data API v3** (importar playlists) y de **Google Cloud Text-to-Speech** (voz de anuncios)
+- Opcional: clave de **YouTube Data API v3** (importar playlists)
 
 ## Instalación y ejecución local
 
@@ -74,7 +74,6 @@ radio-campus/
 │   │   ├── context.js      Algoritmo de selección contextual
 │   │   ├── routes/         API pública y de administración
 │   │   ├── backup.js       Exportar / restaurar configuración
-│   │   ├── tts.js          Google Text-to-Speech
 │   │   ├── youtube.js      Importación de playlists
 │   │   └── schema.sql      Esquema de la base de datos
 │   └── test/               Pruebas unitarias y de integración
@@ -86,5 +85,6 @@ radio-campus/
 ## Funciones simuladas o con limitaciones
 
 - **Simulación de contexto**: el panel permite fijar hora, temperatura o evento para demostraciones. Cuando está activa, el panel lo indica en rojo. Debe quedar vacía en operación normal.
-- **Pruebas automáticas**: la pantalla se simula con un cliente Socket.IO y el audio de anuncios se inserta directamente; la reproducción real en YouTube y la voz de Google TTS se verifican manualmente en el navegador (checklist en `docs/PRUEBAS.md`).
+- **Voz de anuncios**: se usa la síntesis de voz disponible en el navegador de la pantalla; no se envía el texto a un servicio TTS del servidor. La disponibilidad y calidad dependen de las voces instaladas en el dispositivo.
+- **Pruebas automáticas**: la pantalla se simula con un cliente Socket.IO; la reproducción real en YouTube y la voz del navegador se verifican manualmente (checklist en `docs/PRUEBAS.md`).
 - **Licencias musicales**: la reproducción pública en el campus requiere los permisos correspondientes; ver `docs/SERVICIOS_Y_COSTOS.md`.

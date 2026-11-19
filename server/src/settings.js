@@ -6,6 +6,7 @@ export const DEFAULTS = {
   no_votes: 'random',
   recent_window: 10,
   excluded_restrictions: ['explicit'],
+  source_playlist_id: null,
   fallback_playlist_id: null,
   context_override: null,
 };

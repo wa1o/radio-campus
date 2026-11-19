@@ -27,10 +27,6 @@ services:
         sync: false
       - key: YOUTUBE_API_KEY
         sync: false
-      - key: GOOGLE_TTS_API_KEY
-        sync: false
-      - key: TTS_LANGUAGE
-        value: es-US
       - key: STATION_TZ
         value: America/Mexico_City
       - key: STATION_LAT

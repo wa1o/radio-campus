@@ -22,7 +22,6 @@ flowchart LR
   DB[(PostgreSQL)]
   YT[YouTube<br/>IFrame Player + Data API]
   OM[Open-Meteo<br/>temperatura]
-  TTS[Google Cloud<br/>Text-to-Speech]
 
   V -- "POST /api/vote" --> API
   A -- "JWT · CRUD · control" --> API
@@ -32,13 +31,14 @@ flowchart LR
   C --> DB
   D --> DB
   B --> DB
-  API -- "generar voz" --> TTS
   API -- "importar playlist" --> YT
   D == "state (todos)" ==> S & V & A
   D == "command: play / announcement / pause" ==> S
   S == "songEnded / announcementEnded / playerError" ==> D
   S -- "reproduce" --> YT
 ```
+
+La voz de los anuncios se sintetiza en el navegador de la pantalla con la voz española disponible en ese dispositivo; el servidor solo transmite el texto.
 
 ## Flujo de una ronda
 
@@ -76,7 +76,7 @@ Si la canción termina antes que el temporizador, la ronda se cierra en ese mome
 1. **Contexto**: hora local (`STATION_TZ`), temperatura de Open-Meteo (caché de 10 min) y tipos de evento activos en la tabla `events`. El administrador puede simular cualquiera de los tres.
 2. **Reglas que coinciden**: se evalúan las reglas activas (hora, rango de temperatura, tipo de evento) y se ordenan por prioridad.
 3. **Combinación**: para cada filtro (géneros, energía, ambiente, temática) manda la regla de mayor prioridad que lo defina; las de menor prioridad completan los filtros libres. Ejemplo: «Mañana» fija energía media y «Calor» fija ambiente fresco → ambas se aplican. Una regla **exclusiva** (p. ej. exámenes) detiene la combinación.
-4. **Exclusiones**: canciones inactivas, con restricciones excluidas en Ajustes (p. ej. `explicit`), la canción actual y las últimas *N* reproducidas.
+4. **Exclusiones**: canciones inactivas, con restricciones excluidas en Ajustes (p. ej. `explicit`), la canción actual y las últimas *N* reproducidas. Si se selecciona una lista para rotación automática, solo sus canciones se ofrecen a votación.
 5. **Relajación**: si quedan menos de dos canciones, se descartan las reglas de menor prioridad una por una.
 6. **Respaldo**: si aun así no hay dos opciones, o si no hay datos de clima o calendario, se usa la lista de respaldo autorizada (también filtrada por restricciones).
 7. Se eligen dos al azar. El nombre de las reglas aplicadas queda guardado en la ronda.
@@ -103,6 +103,6 @@ Si la canción termina antes que el temporizador, la ronda se cierra en ese mome
 | Error del reproductor (video no disponible, audio inaccesible) | Se registra en «Último error» y se pasa a la siguiente canción |
 | Clima o calendario no disponibles | Selección desde la lista de respaldo; aviso en el panel |
 | Sin canciones elegibles | Reintento cada 30 s; mensaje en el panel |
-| Falla de Google TTS | Error visible al generar la voz; el anuncio queda en borrador |
+| Navegador sin síntesis de voz | Se registra un error del reproductor y el programa continúa |
 | Base de datos caída | `/api/health` responde 503 y el proveedor de alojamiento reinicia o alerta |
 | Pérdida de configuración | Restaurar desde el respaldo JSON (Ajustes → Respaldo) |

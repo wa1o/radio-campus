@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useStation, useCountdown, ConnectionBadge } from '../socket.jsx';
+import { speak } from '../speech.js';
 
 let ytPromise;
 function loadYouTube() {
   if (!ytPromise) {
-    ytPromise = new Promise(resolve => {
+    ytPromise = new Promise((resolve, reject) => {
       if (window.YT?.Player) return resolve(window.YT);
       window.onYouTubeIframeAPIReady = () => resolve(window.YT);
       const script = document.createElement('script');
       script.src = 'https://www.youtube.com/iframe_api';
+      script.onerror = () => reject(new Error('No se pudo cargar el reproductor de YouTube'));
       document.head.appendChild(script);
     });
   }
@@ -17,6 +19,10 @@ function loadYouTube() {
 }
 
 const fmtDate = v => new Date(v).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
+const formatTime = value => {
+  const seconds = Math.max(0, Math.floor(Number(value) || 0));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+};
 
 export default function Screen() {
   const key = new URLSearchParams(window.location.search).get('key');
@@ -24,7 +30,7 @@ export default function Screen() {
   if (!started) {
     return (
       <div className="screen start">
-        <button onClick={() => setStarted(true)}>Activar pantalla</button>
+        <button onClick={() => setStarted(true)}>Preparar pantalla</button>
       </div>
     );
   }
@@ -38,9 +44,69 @@ function ScreenLive({ screenKey }) {
   const player = useRef(null);
   const audio = useRef(new Audio());
   const cmd = useRef(null);
+  const speechUtterance = useRef(null);
+  const audioUnlockedRef = useRef(false);
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
+  const [playerReady, setPlayerReady] = useState(false);
+  const [playbackMessage, setPlaybackMessage] = useState(null);
+  const [position, setPosition] = useState({ current: 0, duration: 0 });
   const [authError, setAuthError] = useState(null);
 
   const emit = (event, data) => socketRef.current?.emit(event, data);
+
+  function setSoundUnlocked(value) {
+    audioUnlockedRef.current = value;
+    setAudioUnlocked(value);
+  }
+
+  function activateAudio() {
+    const current = cmd.current;
+    if (current?.type !== 'play') {
+      setPlaybackMessage('La canción todavía no está lista para reproducirse.');
+      return;
+    }
+
+    setPlaybackMessage(null);
+    if (current.provider === 'licensed_audio') {
+      audio.current.play().then(() => setSoundUnlocked(true)).catch(err => {
+        if (err.name === 'NotAllowedError') {
+          setPlaybackMessage('El navegador bloqueó el audio. Vuelve a tocar «Activar audio».');
+        } else {
+          setPlaybackMessage(`No se pudo reproducir el audio: ${err.message}`);
+          emit('playerError', { playId: current.playId, message: err.message });
+        }
+      });
+      return;
+    }
+
+    if (!player.current?.playVideo) {
+      setPlaybackMessage('El reproductor de YouTube todavía está cargando.');
+      return;
+    }
+    player.current.unMute?.();
+    player.current.playVideo();
+    setSoundUnlocked(true);
+  }
+
+  function startAnnouncement(c) {
+    try {
+      speechUtterance.current = speak(c.text, {
+        onEnd: () => {
+          if (cmd.current?.type === 'announcement' && cmd.current.id === c.id) {
+            speechUtterance.current = null;
+            emit('announcementEnded', { id: c.id });
+          }
+        },
+        onError: event => {
+          if (cmd.current?.type === 'announcement' && cmd.current.id === c.id) {
+            emit('playerError', { id: c.id, message: `No se pudo reproducir la voz (${event.error})` });
+          }
+        },
+      });
+    } catch (err) {
+      emit('playerError', { id: c.id, message: err.message });
+    }
+  }
 
   function apply(c) {
     const p = player.current;
@@ -48,39 +114,58 @@ function ScreenLive({ screenKey }) {
     if (!c) return;
     switch (c.type) {
       case 'play':
+        window.speechSynthesis?.cancel();
+        speechUtterance.current = null;
+        setPlaybackMessage(null);
         a.pause();
         if (c.provider === 'licensed_audio') {
           p?.stopVideo();
           a.src = c.streamRef;
-          if (!c.paused) {
-            a.play().catch(err => emit('playerError', { playId: c.playId, message: err.message }));
+          if (!c.paused && audioUnlockedRef.current) {
+            a.play().catch(err => {
+              setPlaybackMessage(`No se pudo reproducir el audio: ${err.message}`);
+              emit('playerError', { playId: c.playId, message: err.message });
+            });
           }
         } else if (p?.loadVideoById) {
           a.removeAttribute('src');
           a.load();
           if (c.paused) p.cueVideoById(c.streamRef);
-          else p.loadVideoById(c.streamRef);
+          else if (audioUnlockedRef.current) p.loadVideoById(c.streamRef);
+          else p.cueVideoById(c.streamRef);
         }
         break;
       case 'announcement':
         p?.stopVideo();
-        a.src = c.url;
-        if (!c.paused) a.play().catch(err => emit('playerError', { id: c.id, message: err.message }));
+        a.pause();
+        a.removeAttribute('src');
+        a.load();
+        window.speechSynthesis?.cancel();
+        speechUtterance.current = null;
+        if (!c.paused) startAnnouncement(c);
         break;
       case 'pause':
         p?.pauseVideo();
         a.pause();
+        window.speechSynthesis?.pause();
         break;
       case 'resume':
-        if (cmd.current?.type === 'announcement') a.play().catch(() => {});
-        else if (cmd.current?.provider === 'licensed_audio') a.play().catch(err => emit('playerError', { playId: cmd.current.playId, message: err.message }));
-        else p?.playVideo();
+        if (cmd.current?.type === 'announcement') {
+          if (speechUtterance.current) window.speechSynthesis?.resume();
+          else startAnnouncement(cmd.current);
+        }
+        else if (cmd.current?.provider === 'licensed_audio' && audioUnlockedRef.current) {
+          a.play().catch(err => emit('playerError', { playId: cmd.current.playId, message: err.message }));
+        } else if (audioUnlockedRef.current) p?.playVideo();
+        else setPlaybackMessage('Toca «Activar audio» para continuar la reproducción.');
         break;
       default:
         p?.stopVideo();
         a.pause();
         a.removeAttribute('src');
         a.load();
+        window.speechSynthesis?.cancel();
+        speechUtterance.current = null;
     }
   }
 
@@ -95,6 +180,7 @@ function ScreenLive({ screenKey }) {
     a.onerror = () => {
       if (cmd.current?.type === 'announcement') emit('playerError', { id: cmd.current.id, message: 'No se pudo cargar el audio del anuncio' });
       else if (cmd.current?.type === 'play' && cmd.current.provider === 'licensed_audio') {
+        setPlaybackMessage('No se pudo cargar el audio licenciado.');
         emit('playerError', { playId: cmd.current.playId, message: 'No se pudo cargar el audio licenciado' });
       }
     };
@@ -109,16 +195,31 @@ function ScreenLive({ screenKey }) {
         height: 200,
         playerVars: { autoplay: 1, controls: 0, rel: 0, playsinline: 1 },
         events: {
-          onReady: () => apply(cmd.current),
+          onReady: () => {
+            setPlayerReady(true);
+            apply(cmd.current);
+          },
           onStateChange: e => {
+            if (e.data === YT.PlayerState.PLAYING) {
+              setSoundUnlocked(true);
+              setPlaybackMessage(null);
+            }
             if (e.data === YT.PlayerState.ENDED && cmd.current?.type === 'play') emit('songEnded', { playId: cmd.current.playId });
           },
           onError: e => {
-            if (cmd.current?.type === 'play') emit('playerError', { playId: cmd.current.playId, message: `YouTube código ${e.data}` });
+            if (cmd.current?.type === 'play') {
+              const message = `YouTube código ${e.data}`;
+              setPlaybackMessage(`No se pudo reproducir este video (${e.data}).`);
+              emit('playerError', { playId: cmd.current.playId, message });
+            }
+          },
+          onAutoplayBlocked: () => {
+            setSoundUnlocked(false);
+            setPlaybackMessage('El navegador bloqueó el inicio automático. Toca «Activar audio».');
           },
         },
       });
-    });
+    }).catch(err => setPlaybackMessage(err.message));
 
     const socket = socketRef.current;
     const onCommand = c => {
@@ -135,29 +236,71 @@ function ScreenLive({ screenKey }) {
       socket.off('command', onCommand);
       socket.off('authError', setAuthError);
       a.pause();
+      window.speechSynthesis?.cancel();
       player.current?.destroy?.();
     };
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (cmd.current?.type !== 'play') {
+        setPosition({ current: 0, duration: 0 });
+        return;
+      }
+
+      if (cmd.current.provider === 'licensed_audio') {
+        const audioPlayer = audio.current;
+        setPosition({
+          current: Number.isFinite(audioPlayer.currentTime) ? audioPlayer.currentTime : 0,
+          duration: Number.isFinite(audioPlayer.duration) ? audioPlayer.duration : 0,
+        });
+      } else if (player.current?.getCurrentTime && player.current?.getDuration) {
+        setPosition({
+          current: player.current.getCurrentTime() || 0,
+          duration: player.current.getDuration() || 0,
+        });
+      }
+    }, 1000);
+    return () => clearInterval(timer);
   }, []);
 
   if (authError) return <div className="screen start"><p>{authError}</p></div>;
 
   const round = state?.round;
   const total = round ? Object.values(round.counts).reduce((x, y) => x + y, 0) : 0;
+  const progress = position.duration ? Math.min(100, (position.current / position.duration) * 100) : 0;
   const voteUrl = `${window.location.origin}/vote`;
 
   return (
     <div className="screen">
       <header className="screen-now">
-        <div>
-          <span className="label">Sonando ahora</span>
-          <h1>{state?.nowPlaying?.title ?? 'En espera'}</h1>
-          <h2>{state?.nowPlaying?.artist ?? ''}</h2>
+        <div className="now-playing">
+          {state?.nowPlaying?.thumbnailUrl && (
+            <img className="now-playing-thumbnail" src={state.nowPlaying.thumbnailUrl} alt={`Miniatura de ${state.nowPlaying.title}`} />
+          )}
+          <div>
+            <span className="label">Sonando ahora</span>
+            <h1>{state?.nowPlaying?.title ?? 'En espera'}</h1>
+            <h2>{state?.nowPlaying?.artist ?? ''}</h2>
+            <div className="track-progress" aria-label="Progreso de la canción">
+              <div className="track-progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(progress)}>
+                <div style={{ width: `${progress}%` }} />
+              </div>
+              <div className="track-progress-time">
+                <span>{formatTime(position.current)}</span>
+                <span>{position.duration ? formatTime(position.duration) : '--:--'}</span>
+              </div>
+            </div>
+          </div>
         </div>
         <ConnectionBadge connected={connected} />
       </header>
 
       <main className="screen-main">
         <section className="screen-round">
+          {(playbackMessage || state?.lastError) && (
+            <div className="screen-error" role="status">{playbackMessage || state.lastError}</div>
+          )}
           {state?.phase === 'announcement' && <div className="banner">Aviso: {state.announcement?.text}</div>}
           {state?.paused && <div className="banner">Programación en pausa</div>}
           {round ? (
@@ -190,6 +333,11 @@ function ScreenLive({ screenKey }) {
           <QRCodeSVG value={voteUrl} size={220} includeMargin />
           <p className="muted">{voteUrl.replace(/^https?:\/\//, '')}</p>
           <div ref={ytBox} className="yt-box" />
+          {state?.phase === 'playing' && !audioUnlocked && (
+            <button className="screen-audio-button" disabled={state.nowPlaying?.provider !== 'licensed_audio' && !playerReady} onClick={activateAudio}>
+              {state.nowPlaying?.provider !== 'licensed_audio' && !playerReady ? 'Cargando reproductor…' : 'Activar audio'}
+            </button>
+          )}
           {state?.nowPlaying?.provider === 'licensed_audio' && <p className="player-source">Audio licenciado</p>}
           <h3>Próximos eventos</h3>
           <ul>

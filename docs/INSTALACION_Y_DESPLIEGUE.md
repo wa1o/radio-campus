@@ -6,9 +6,9 @@
 |---|---|---|
 | GitHub | Repositorio y despliegue automático | Acceso al repo `wa1o/radio-campus` |
 | Render (u otro alojamiento Node + PostgreSQL) | Servidor con HTTPS y base de datos | render.com, cuenta con método de pago para planes sin suspensión |
-| Google Cloud | Text-to-Speech y YouTube Data API v3 | Crear proyecto → habilitar ambas APIs → *Credenciales* → *Crear clave de API*. TTS exige una cuenta de facturación aunque el uso quede en la capa gratuita |
+| Google Cloud | YouTube Data API v3 (importar playlists) | Crear proyecto → habilitar YouTube Data API v3 → *Credenciales* → *Crear clave de API* |
 
-Restringe cada clave de API en Google Cloud a la API que usa (Text-to-Speech o YouTube Data API v3).
+Restringe la clave de API en Google Cloud a YouTube Data API v3.
 
 ## 2. Instalación local
 
@@ -23,7 +23,7 @@ Edita `.env`:
 - `DATABASE_URL`: p. ej. `postgres://postgres:tu_clave@localhost:5432/radio_campus` (crea la base antes en pgAdmin o con `createdb`).
 - `JWT_SECRET` y `SCREEN_KEY`: cadenas largas y aleatorias, p. ej. `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
 - `ADMIN_EMAIL` / `ADMIN_PASSWORD`: primer administrador.
-- `GOOGLE_TTS_API_KEY`, `YOUTUBE_API_KEY`: opcionales para probar, necesarias en producción.
+- `YOUTUBE_API_KEY`: necesaria para importar playlists; la voz de anuncios usa el navegador y no requiere una API key.
 
 ```bash
 npm run build
@@ -43,7 +43,7 @@ Abre:
    - `radio-campus` (servicio web Node, plan Starter, siempre encendido)
    - `radio-campus-db` (PostgreSQL Basic-256mb)
    `JWT_SECRET` y `SCREEN_KEY` se generan solos; `DATABASE_URL` se conecta sola.
-3. Completa en el servicio web → *Environment* los valores marcados para capturar: `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `GOOGLE_TTS_API_KEY`, `YOUTUBE_API_KEY`.
+3. Completa en el servicio web → *Environment* los valores marcados para capturar: `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `YOUTUBE_API_KEY`.
 4. Espera el primer despliegue. Render asigna `https://radio-campus-XXXX.onrender.com` con HTTPS.
 5. Comprueba `https://…/api/health` → `{"ok":true,"db":true,…}`.
 6. Consulta el valor de `SCREEN_KEY` en *Environment* y abre la pantalla con `https://…/screen?key=ESE_VALOR`.

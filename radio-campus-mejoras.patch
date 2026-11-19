@@ -1,0 +1,1708 @@
+From 352614db57b481109ca2c052540cb0754d4c6717 Mon Sep 17 00:00:00 2001
+From: Eduardo <eduardo@users.noreply.github.com>
+Date: Thu, 19 Nov 2026 15:23:31 -0600
+Subject: [PATCH] =?UTF-8?q?Reglas=20contextuales=20combinadas,=20simulaci?=
+ =?UTF-8?q?=C3=B3n=20de=20contexto,=20respaldos,=20pruebas=20E2E=20y=20doc?=
+ =?UTF-8?q?umentaci=C3=B3n=20de=20entrega?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Combina reglas por prioridad, regla exclusiva y relajación antes del respaldo
+- Simulación de contexto y acción «Regenerar ronda» en el panel
+- Exportar/restaurar configuración, /api/health, .env.example y render.yaml
+- Reproductor de YouTube a 356x200 (tamaño mínimo de sus políticas)
+- Pruebas unitarias del algoritmo y prueba de ronda completa con PostgreSQL
+- README y docs: arquitectura, BD, despliegue, manual admin, costos, pruebas
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01KQJweKARtTr4QTY9HZo7pP
+---
+ .env.example                     |  33 +++++
+ README.md                        |  94 +++++++++++--
+ client/src/pages/Admin.jsx       |  70 +++++++++-
+ client/src/pages/Screen.jsx      |   5 +-
+ client/src/styles.css            |  11 +-
+ docs/ARQUITECTURA.md             | 108 ++++++++++++++
+ docs/BASE_DE_DATOS.md            |  49 +++++++
+ docs/INSTALACION_Y_DESPLIEGUE.md |  78 +++++++++++
+ docs/MANUAL_ADMIN.md             |  85 +++++++++++
+ docs/PRUEBAS.md                  |  62 +++++++++
+ docs/SERVICIOS_Y_COSTOS.md       |  53 +++++++
+ render.yaml                      |  44 ++++++
+ server/package-lock.json         |  92 ++++++++++++
+ server/package.json              |   6 +-
+ server/src/backup.js             |  67 +++++++++
+ server/src/context.js            |  80 +++++++++--
+ server/src/director.js           |  23 ++-
+ server/src/index.js              |  11 +-
+ server/src/routes/admin.js       |  24 +++-
+ server/src/settings.js           |   1 +
+ server/test/context.test.js      |  70 ++++++++++
+ server/test/e2e.test.js          | 232 +++++++++++++++++++++++++++++++
+ 22 files changed, 1268 insertions(+), 30 deletions(-)
+ create mode 100644 .env.example
+ create mode 100644 docs/ARQUITECTURA.md
+ create mode 100644 docs/BASE_DE_DATOS.md
+ create mode 100644 docs/INSTALACION_Y_DESPLIEGUE.md
+ create mode 100644 docs/MANUAL_ADMIN.md
+ create mode 100644 docs/PRUEBAS.md
+ create mode 100644 docs/SERVICIOS_Y_COSTOS.md
+ create mode 100644 render.yaml
+ create mode 100644 server/src/backup.js
+ create mode 100644 server/test/context.test.js
+ create mode 100644 server/test/e2e.test.js
+
+diff --git a/.env.example b/.env.example
+new file mode 100644
+index 0000000..8e0397f
+--- /dev/null
++++ b/.env.example
+@@ -0,0 +1,33 @@
++# Copia este archivo como .env y reemplaza los valores. Nunca subas .env al repositorio.
++
++# --- Obligatorias ---
++# Cadena de conexión a PostgreSQL
++DATABASE_URL=postgres://usuario:contraseña@localhost:5432/radio_campus
++# true si el proveedor exige SSL (Render, Neon, Supabase…); false en local
++PGSSL=false
++# Secreto para firmar las sesiones del panel (cadena larga y aleatoria)
++JWT_SECRET=cambia-esto-por-una-cadena-larga-y-aleatoria
++# Clave de la pantalla pública: se abre como /screen?key=ESTA_CLAVE
++SCREEN_KEY=cambia-esta-clave-de-pantalla
++
++# --- Administrador inicial (se crea al arrancar si no existe) ---
++ADMIN_EMAIL=admin@ejemplo.edu.mx
++ADMIN_PASSWORD=cambia-esta-contraseña
++
++# --- Servicios externos ---
++# YouTube Data API v3 (solo para importar playlists desde el panel)
++YOUTUBE_API_KEY=
++# Google Cloud Text-to-Speech (locución de anuncios)
++GOOGLE_TTS_API_KEY=
++TTS_LANGUAGE=es-US
++# Opcional, p. ej. es-US-Neural2-A; vacío usa la voz por defecto del idioma
++TTS_VOICE=
++
++# --- Contexto de la estación ---
++STATION_TZ=America/Mexico_City
++# Coordenadas para la temperatura (Open-Meteo, sin clave). Por defecto, Tampico.
++STATION_LAT=22.2553
++STATION_LON=-97.8686
++
++# Puerto HTTP (los servicios de alojamiento suelen fijarlo solos)
++PORT=3000
+diff --git a/README.md b/README.md
+index 5b2860b..2649c54 100644
+--- a/README.md
++++ b/README.md
+@@ -1,14 +1,90 @@
+ # Radio Campus
+ 
++Radio inteligente e interactiva para el campus. La comunidad vota desde el teléfono (vía QR) cuál de dos canciones sonará después; las opciones se eligen según la hora, la temperatura y el calendario institucional, y entre canciones se reproducen anuncios con voz sintética.
++
++| Interfaz | Ruta | Uso |
++|---|---|---|
++| Pantalla pública | `/screen?key=SCREEN_KEY` | Pantalla horizontal del campus; reproduce la música y muestra la ronda, QR, temporizador, resultados y avisos |
++| Votación móvil | `/vote` | Página que abre el QR; no requiere instalar nada |
++| Panel de administración | `/admin` | Catálogo, reglas, eventos, anuncios, control en vivo, estadísticas y ajustes |
++
+ ## Requisitos
+-- Node.js 18.11 o superior
+-- PostgreSQL
+ 
+-## Configuración
+-1. Crea `.env` en la raíz del proyecto y configura la conexión a PostgreSQL y las claves.
+-2. Para importar playlists públicas de YouTube, habilita YouTube Data API v3 en Google Cloud y agrega `YOUTUBE_API_KEY=tu_clave` a `.env`. La clave se usa solo en el servidor.
+-3. Las canciones con audio licenciado pueden registrarse usando su URL directa HTTP/HTTPS; confirma que tu licencia permita reproducirlas públicamente.
+-4. Ejecuta `npm run build` para instalar dependencias y compilar el cliente.
+-5. Ejecuta `npm start` para iniciar el servidor.
++- Node.js 18.11 o superior (probado con Node 22)
++- PostgreSQL 13 o superior
++- Opcional: clave de **YouTube Data API v3** (importar playlists) y de **Google Cloud Text-to-Speech** (voz de anuncios)
++
++## Instalación y ejecución local
++
++```bash
++git clone https://github.com/wa1o/radio-campus.git
++cd radio-campus
++cp .env.example .env          # edita los valores (ver abajo)
++createdb radio_campus         # o créala desde pgAdmin
++npm run build                 # instala dependencias y compila el cliente
++npm start                     # http://localhost:3000
++```
++
++Las tablas se crean solas al arrancar (`server/src/schema.sql`) y se da de alta el administrador definido en `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
++
++Para desarrollar con recarga automática, en dos terminales:
++
++```bash
++npm run dev:server   # API + Socket.IO en :3000
++npm run dev:client   # Vite en :5173 (redirige /api y /socket.io al servidor)
++```
++
++### Variables de entorno
++
++Todas se describen en [`.env.example`](.env.example). Las obligatorias son `DATABASE_URL`, `JWT_SECRET` y `SCREEN_KEY`; el servidor no arranca sin ellas. Las claves nunca se envían al navegador ni se guardan en el repositorio (`.env` está en `.gitignore`).
++
++## Pruebas
++
++```bash
++cd server
++npm test                                                        # unitarias (algoritmo contextual, YouTube)
++TEST_DATABASE_URL=postgres://usuario:clave@localhost/radio_test npm run test:e2e   # ronda completa (¡vacía esa base!)
++```
++
++La prueba de integración levanta el servidor, simula la pantalla y tres teléfonos, y comprueba la ronda completa, el cambio de contexto, los anuncios, la persistencia tras reiniciar y el respaldo. Resultados en [docs/PRUEBAS.md](docs/PRUEBAS.md).
++
++## Despliegue
++
++El repositorio incluye un blueprint de Render (`render.yaml`) que crea el servicio web y la base PostgreSQL con HTTPS. Pasos completos y alternativas en [docs/INSTALACION_Y_DESPLIEGUE.md](docs/INSTALACION_Y_DESPLIEGUE.md).
++
++## Documentación
++
++- [Arquitectura y diagrama de flujo](docs/ARQUITECTURA.md)
++- [Base de datos](docs/BASE_DE_DATOS.md)
++- [Instalación y despliegue](docs/INSTALACION_Y_DESPLIEGUE.md)
++- [Manual del administrador](docs/MANUAL_ADMIN.md)
++- [Servicios externos y costos](docs/SERVICIOS_Y_COSTOS.md)
++- [Pruebas y evidencias](docs/PRUEBAS.md)
++
++## Estructura
++
++```
++radio-campus/
++├── client/                 React + Vite (pantalla, votación y panel)
++│   └── src/pages/          Screen.jsx · Vote.jsx · Admin.jsx
++├── server/
++│   ├── src/
++│   │   ├── index.js        Express + Socket.IO, arranque y health check
++│   │   ├── director.js     Programación: rondas, votos, cola, anuncios (estado central)
++│   │   ├── context.js      Algoritmo de selección contextual
++│   │   ├── routes/         API pública y de administración
++│   │   ├── backup.js       Exportar / restaurar configuración
++│   │   ├── tts.js          Google Text-to-Speech
++│   │   ├── youtube.js      Importación de playlists
++│   │   └── schema.sql      Esquema de la base de datos
++│   └── test/               Pruebas unitarias y de integración
++├── docs/                   Manuales y documentación técnica
++├── render.yaml             Despliegue en Render
++└── .env.example            Variables de entorno sin secretos
++```
++
++## Funciones simuladas o con limitaciones
+ 
+-Para desarrollo, usa `npm run dev:server` y `npm run dev:client` en terminales separadas.
++- **Simulación de contexto**: el panel permite fijar hora, temperatura o evento para demostraciones. Cuando está activa, el panel lo indica en rojo. Debe quedar vacía en operación normal.
++- **Pruebas automáticas**: la pantalla se simula con un cliente Socket.IO y el audio de anuncios se inserta directamente; la reproducción real en YouTube y la voz de Google TTS se verifican manualmente en el navegador (checklist en `docs/PRUEBAS.md`).
++- **Licencias musicales**: la reproducción pública en el campus requiere los permisos correspondientes; ver `docs/SERVICIOS_Y_COSTOS.md`.
+diff --git a/client/src/pages/Admin.jsx b/client/src/pages/Admin.jsx
+index bb8c198..5bcfcd6 100644
+--- a/client/src/pages/Admin.jsx
++++ b/client/src/pages/Admin.jsx
+@@ -250,6 +250,7 @@ const ruleFields = [
+   { path: 'condition.temp_min', label: 'Temperatura mínima °C', type: 'number' },
+   { path: 'condition.temp_max', label: 'Temperatura máxima °C', type: 'number' },
+   { path: 'condition.event_type', label: 'Con evento activo', type: 'select', options: [['', '—'], ...EVENT_TYPES] },
++  { path: 'condition.exclusive', label: 'Exclusiva (ignora las reglas de menor prioridad)', type: 'checkbox', default: false },
+   { path: 'filters.genres', label: 'Géneros permitidos', type: 'tags' },
+   { path: 'filters.energy', label: 'Energías permitidas (low, medium, high)', type: 'tags' },
+   { path: 'filters.moods', label: 'Ambientes permitidos', type: 'tags' },
+@@ -278,7 +279,8 @@ function describeCondition(c) {
+     (c.temp_min != null || c.temp_max != null) && `${c.temp_min ?? '…'}–${c.temp_max ?? '…'} °C`,
+     c.event_type && `evento: ${EVENT_LABEL[c.event_type] ?? c.event_type}`,
+   ].filter(Boolean);
+-  return parts.join(' · ') || 'siempre';
++  const text = parts.join(' · ') || 'siempre';
++  return c.exclusive ? `${text} · exclusiva` : text;
+ }
+ 
+ function describeFilters(f) {
+@@ -331,6 +333,8 @@ function Control() {
+           <p>Pantalla: {state.screenOnline ? 'conectada' : 'desconectada'}</p>
+           <p>Regla activa: {state.ruleName ?? '—'}</p>
+           {ctx && <p>Contexto: {ctx.hhmm} · {ctx.temp ?? '—'} °C · {ctx.eventTypes.map(t => EVENT_LABEL[t] ?? t).join(', ') || 'sin eventos'}</p>}
++          {ctx?.simulated && <p className="error">Contexto simulado activo (Ajustes)</p>}
++          {ctx?.degraded && <p className="error">Sin datos de clima o calendario: se usa la lista de respaldo</p>}
+         </div>
+         <div className="card">
+           <h3>Sonando</h3>
+@@ -357,6 +361,7 @@ function Control() {
+           ? <button onClick={() => act('resume')}>Reanudar</button>
+           : <button onClick={() => act('pause')}>Pausar</button>}
+         <button onClick={() => act('skip')}>Saltar</button>
++        <button onClick={() => act('reroll')} title="Descarta la ronda abierta y propone dos opciones con el contexto actual">Regenerar ronda</button>
+         <select value={next} onChange={e => setNext(e.target.value)}>
+           <option value="">Elegir siguiente canción…</option>
+           {songs.filter(s => s.active).map(s => <option key={s.id} value={s.id}>{s.title} — {s.artist}</option>)}
+@@ -494,7 +499,13 @@ function Settings() {
+   const [s, setS] = useState(null);
+   const [playlists, setPlaylists] = useState([]);
+   const [msg, setMsg] = useState(null);
+-  const fromServer = x => ({ ...x, excluded_restrictions: x.excluded_restrictions.join(', ') });
++  const fromServer = x => ({
++    ...x,
++    excluded_restrictions: x.excluded_restrictions.join(', '),
++    sim_hhmm: x.context_override?.hhmm ?? '',
++    sim_temp: x.context_override?.temp ?? '',
++    sim_event: x.context_override?.event_type ?? '',
++  });
+ 
+   useEffect(() => {
+     api('/admin/settings').then(x => setS(fromServer(x))).catch(e => setMsg(e.message));
+@@ -516,6 +527,9 @@ function Settings() {
+           no_votes: s.no_votes,
+           excluded_restrictions: s.excluded_restrictions.split(',').map(x => x.trim()).filter(Boolean),
+           fallback_playlist_id: s.fallback_playlist_id ? Number(s.fallback_playlist_id) : null,
++          context_override: s.sim_hhmm || s.sim_temp !== '' || s.sim_event
++            ? { hhmm: s.sim_hhmm || null, temp: s.sim_temp === '' ? null : Number(s.sim_temp), event_type: s.sim_event || null }
++            : null,
+         },
+       });
+       setS(fromServer(out));
+@@ -550,12 +564,64 @@ function Settings() {
+           {playlists.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+         </select>
+       </label>
++      <h3>Simulación de contexto (pruebas y demostraciones)</h3>
++      <p className="muted">Deja vacío para usar los datos reales. Se aplica desde la siguiente ronda o al pulsar «Regenerar ronda» en Control.</p>
++      <label>Hora simulada<input type="time" value={s.sim_hhmm} onChange={set('sim_hhmm')} /></label>
++      <label>Temperatura simulada °C<input type="number" step="any" value={s.sim_temp} onChange={set('sim_temp')} /></label>
++      <label>Evento simulado
++        <select value={s.sim_event} onChange={set('sim_event')}>
++          <option value="">— ninguno —</option>
++          {EVENT_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
++        </select>
++      </label>
+       {msg && <p className="muted">{msg}</p>}
+       <button type="submit">Guardar</button>
++      <Backup />
+     </form>
+   );
+ }
+ 
++function Backup() {
++  const [msg, setMsg] = useState(null);
++
++  const download = async () => {
++    try {
++      const blob = await api('/admin/backup', { blob: true });
++      const a = document.createElement('a');
++      a.href = URL.createObjectURL(blob);
++      a.download = `radio-campus-respaldo-${new Date().toISOString().slice(0, 10)}.json`;
++      a.click();
++      setMsg('Respaldo descargado');
++    } catch (err) {
++      setMsg(err.message);
++    }
++  };
++
++  const restore = async e => {
++    const file = e.target.files?.[0];
++    e.target.value = '';
++    if (!file || !confirm('Se actualizarán canciones, reglas, eventos, anuncios y ajustes con el contenido del respaldo. ¿Continuar?')) return;
++    try {
++      const out = await api('/admin/restore', { method: 'POST', body: JSON.parse(await file.text()) });
++      setMsg(`Restaurado: ${Object.entries(out.counts).map(([k, v]) => `${k} ${v}`).join(', ')}. Recarga la página para ver los cambios.`);
++    } catch (err) {
++      setMsg(err.message);
++    }
++  };
++
++  return (
++    <div className="backup">
++      <h3>Respaldo de configuración</h3>
++      <p className="muted">Incluye catálogo, listas, reglas, eventos, anuncios (con su audio) y ajustes. No incluye administradores ni historial.</p>
++      <div className="row">
++        <button type="button" onClick={download}>Descargar respaldo</button>
++        <label className="button secondary">Restaurar desde archivo<input type="file" accept="application/json" hidden onChange={restore} /></label>
++      </div>
++      {msg && <p className="muted">{msg}</p>}
++    </div>
++  );
++}
++
+ function Login({ onLogin }) {
+   const [email, setEmail] = useState('');
+   const [password, setPassword] = useState('');
+diff --git a/client/src/pages/Screen.jsx b/client/src/pages/Screen.jsx
+index 609ca96..c27c3fe 100644
+--- a/client/src/pages/Screen.jsx
++++ b/client/src/pages/Screen.jsx
+@@ -104,8 +104,9 @@ function ScreenLive({ screenKey }) {
+       const el = document.createElement('div');
+       ytBox.current.appendChild(el);
+       player.current = new YT.Player(el, {
+-        width: 320,
+-        height: 180,
++        // Las políticas del reproductor de YouTube exigen un tamaño mínimo de 200×200 px y que sea visible.
++        width: 356,
++        height: 200,
+         playerVars: { autoplay: 1, controls: 0, rel: 0, playsinline: 1 },
+         events: {
+           onReady: () => apply(cmd.current),
+diff --git a/client/src/styles.css b/client/src/styles.css
+index 2f4c891..6a922c7 100644
+--- a/client/src/styles.css
++++ b/client/src/styles.css
+@@ -95,7 +95,8 @@ tbody tr:hover { background: #fffaf5; }
+ .screen-side h3 { align-self: flex-start; margin: .8vw 0 0; color: #ffb36b; font-size: clamp(17px, 1.5vw, 25px); }
+ .screen-side ul { align-self: stretch; margin: 0; padding-left: 1.2vw; font-size: clamp(12px, 1.1vw, 18px); }
+ .player-source { margin: 0; color: #ffd1a8; font-size: 13px; }
+-.yt-box { width: min(100%, 320px); min-height: 180px; }
++.yt-box { width: 356px; max-width: 100%; min-height: 200px; }
++.yt-box iframe { display: block; min-width: 200px; min-height: 200px; }
+ 
+ @media (max-width: 860px) {
+   .import-card { grid-template-columns: 1fr; }
+@@ -115,4 +116,10 @@ tbody tr:hover { background: #fffaf5; }
+   .screen { padding: 18px; }
+   .screen-side { display: flex; }
+   .screen-side ul { align-self: stretch; }
+-}
+\ No newline at end of file
++}
++label.button { display: inline-flex; align-items: center; padding: 10px 16px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 650; }
++label.button.secondary { background: #fff0e2; color: #76350f; }
++.backup { margin-top: 18px; padding-top: 14px; border-top: 1px solid #f1dcc8; }
++.form > h3, .form > p.muted, .form > .backup { grid-column: 1 / -1; }
++.form > h3 { margin: 12px 0 0; }
++.backup .row { justify-content: flex-start; gap: 10px; }
+diff --git a/docs/ARQUITECTURA.md b/docs/ARQUITECTURA.md
+new file mode 100644
+index 0000000..2cc175f
+--- /dev/null
++++ b/docs/ARQUITECTURA.md
+@@ -0,0 +1,108 @@
++# Arquitectura
++
++## Vista general
++
++Un único servicio Node.js sirve la API REST, el canal en tiempo real (Socket.IO) y la aplicación React compilada. El estado de la programación (fase, ronda abierta, cola) vive en el **Director** del servidor, que es la única autoridad: abre y cierra las rondas con su propio reloj, cuenta los votos en la base de datos y ordena a la pantalla qué reproducir. Los navegadores solo muestran el estado que reciben.
++
++```mermaid
++flowchart LR
++  subgraph Navegadores
++    S[Pantalla pública<br/>/screen?key=…<br/>reproductor YouTube / audio]
++    V[Teléfonos<br/>/vote]
++    A[Panel admin<br/>/admin]
++  end
++
++  subgraph Servidor["Servidor Node.js (Express + Socket.IO)"]
++    API[API REST<br/>/api · /api/admin]
++    D[Director<br/>rondas · votos · cola · anuncios]
++    C[Algoritmo contextual]
++    B[Respaldo / restauración]
++  end
++
++  DB[(PostgreSQL)]
++  YT[YouTube<br/>IFrame Player + Data API]
++  OM[Open-Meteo<br/>temperatura]
++  TTS[Google Cloud<br/>Text-to-Speech]
++
++  V -- "POST /api/vote" --> API
++  A -- "JWT · CRUD · control" --> API
++  API --> D
++  D --> C
++  C -- clima --> OM
++  C --> DB
++  D --> DB
++  B --> DB
++  API -- "generar voz" --> TTS
++  API -- "importar playlist" --> YT
++  D == "state (todos)" ==> S & V & A
++  D == "command: play / announcement / pause" ==> S
++  S == "songEnded / announcementEnded / playerError" ==> D
++  S -- "reproduce" --> YT
++```
++
++## Flujo de una ronda
++
++```mermaid
++sequenceDiagram
++  participant P as Pantalla
++  participant D as Director (servidor)
++  participant DB as PostgreSQL
++  participant T as Teléfonos
++
++  P->>D: conecta con SCREEN_KEY
++  D->>D: pickCandidates() según contexto
++  D->>P: command play (canción actual)
++  D->>DB: INSERT rounds (A, B, ends_at)
++  D-->>P: state (ronda abierta, QR, temporizador)
++  T->>D: POST /api/vote (cookie voter_token)
++  D->>DB: INSERT votes (UNIQUE round_id + token)
++  D-->>P: state (conteo en vivo)
++  Note over D: el temporizador del servidor llega a ends_at
++  D->>DB: cuenta votos, aplica desempate / sin votos
++  D-->>P: state (ganadora)
++  P->>D: songEnded
++  alt hay anuncio vigente y le toca
++    D->>P: command announcement
++    P->>D: announcementEnded
++  end
++  D->>P: command play (ganadora)
++  D->>D: abre la siguiente ronda
++```
++
++Si la canción termina antes que el temporizador, la ronda se cierra en ese momento. Si el temporizador termina antes, la ganadora espera a que acabe la canción actual. Así la votación ocurre siempre mientras suena la canción actual y los anuncios nunca se superponen con la música.
++
++## Algoritmo de selección contextual (`server/src/context.js`)
++
++1. **Contexto**: hora local (`STATION_TZ`), temperatura de Open-Meteo (caché de 10 min) y tipos de evento activos en la tabla `events`. El administrador puede simular cualquiera de los tres.
++2. **Reglas que coinciden**: se evalúan las reglas activas (hora, rango de temperatura, tipo de evento) y se ordenan por prioridad.
++3. **Combinación**: para cada filtro (géneros, energía, ambiente, temática) manda la regla de mayor prioridad que lo defina; las de menor prioridad completan los filtros libres. Ejemplo: «Mañana» fija energía media y «Calor» fija ambiente fresco → ambas se aplican. Una regla **exclusiva** (p. ej. exámenes) detiene la combinación.
++4. **Exclusiones**: canciones inactivas, con restricciones excluidas en Ajustes (p. ej. `explicit`), la canción actual y las últimas *N* reproducidas.
++5. **Relajación**: si quedan menos de dos canciones, se descartan las reglas de menor prioridad una por una.
++6. **Respaldo**: si aun así no hay dos opciones, o si no hay datos de clima o calendario, se usa la lista de respaldo autorizada (también filtrada por restricciones).
++7. Se eligen dos al azar. El nombre de las reglas aplicadas queda guardado en la ronda.
++
++## Tiempo real y consistencia
++
++- Socket.IO difunde el evento `state` a todos los clientes en cada cambio. Incluye `serverTime` para que cada dispositivo calcule el temporizador con el reloj del servidor, sin depender del reloj del teléfono.
++- Las operaciones del Director se encolan (`director.run`) para que votos, cierres y comandos no se pisen.
++- Al reiniciar, las rondas abiertas se marcan como `aborted` y la programación se reanuda cuando la pantalla vuelve a conectarse.
++- Limitación: el estado vive en memoria de **una sola instancia**. No se debe escalar horizontalmente sin mover ese estado a un almacén compartido.
++
++## Seguridad
++
++- Panel: inicio de sesión con contraseña cifrada (bcrypt), JWT de 8 h, límite de 10 intentos cada 15 min.
++- Pantalla: clave `SCREEN_KEY` para recibir comandos de reproducción.
++- Votos: cookie `voter_token` (httpOnly, 30 días) con restricción única por ronda y límite de 20 votos/min por IP. Una persona que borre sus cookies podría votar de nuevo; se decidió no limitar por IP porque en la red del campus muchos teléfonos comparten IP pública.
++- Secretos solo en variables de entorno.
++
++## Manejo de fallas
++
++| Falla | Comportamiento |
++|---|---|
++| Pantalla desconectada | Indicador en panel y pantalla; Socket.IO reconecta solo y la pantalla recibe el comando actual |
++| Error del reproductor (video no disponible, audio inaccesible) | Se registra en «Último error» y se pasa a la siguiente canción |
++| Clima o calendario no disponibles | Selección desde la lista de respaldo; aviso en el panel |
++| Sin canciones elegibles | Reintento cada 30 s; mensaje en el panel |
++| Falla de Google TTS | Error visible al generar la voz; el anuncio queda en borrador |
++| Base de datos caída | `/api/health` responde 503 y el proveedor de alojamiento reinicia o alerta |
++| Pérdida de configuración | Restaurar desde el respaldo JSON (Ajustes → Respaldo) |
+diff --git a/docs/BASE_DE_DATOS.md b/docs/BASE_DE_DATOS.md
+new file mode 100644
+index 0000000..a1fa49d
+--- /dev/null
++++ b/docs/BASE_DE_DATOS.md
+@@ -0,0 +1,49 @@
++# Base de datos
++
++PostgreSQL. El esquema está en [`server/src/schema.sql`](../server/src/schema.sql) y se aplica automáticamente cada vez que arranca el servidor (`CREATE TABLE IF NOT EXISTS`), así que basta con crear una base vacía y definir `DATABASE_URL`.
++
++## Creación
++
++```bash
++# Local
++createdb radio_campus
++# o en psql / pgAdmin:
++CREATE DATABASE radio_campus;
++```
++
++Para aplicar el esquema a mano (opcional): `psql "$DATABASE_URL" -f server/src/schema.sql`.
++
++## Diagrama
++
++```mermaid
++erDiagram
++  songs ||--o{ playlist_songs : ""
++  playlists ||--o{ playlist_songs : ""
++  songs ||--o{ rounds : "candidate_a / candidate_b / winner"
++  rounds ||--o{ votes : ""
++  songs ||--o{ votes : ""
++  songs ||--o{ plays : ""
++  rounds |o--o{ plays : ""
++  announcements ||--o{ announcement_plays : ""
++```
++
++## Tablas
++
++| Tabla | Contenido |
++|---|---|
++| `admins` | Usuarios del panel (`email`, `password_hash` bcrypt) |
++| `songs` | Catálogo: `title`, `artist`, `provider` (`youtube` / `licensed_audio`), `stream_ref` (ID de video o URL), etiquetas `genre`, `energy` (low/medium/high), `mood`, `themes[]`, `restrictions[]`, `active` |
++| `playlists`, `playlist_songs` | Listas y su relación con canciones (una de ellas puede ser la de respaldo) |
++| `events` | Festividades y eventos: `name`, `type` (`exam`, `holiday`, `event`), `starts_at`, `ends_at` |
++| `context_rules` | Reglas: `priority`, `condition` JSON (`time_from`, `time_to`, `temp_min`, `temp_max`, `event_type`, `exclusive`), `filters` JSON (`genres`, `energy`, `moods`, `themes`), `active` |
++| `announcements` | Texto, `status` (draft/approved), `audio` MP3 generado, vigencia (`valid_from/to`), horario (`hour_from/to`), frecuencia `every_n_songs`, `last_played_at` |
++| `rounds` | Cada votación: candidatas, apertura, `ends_at`, cierre, `status` (open/closed/aborted), conteo, ganadora, `resolution`, regla aplicada |
++| `votes` | Un voto por `voter_token` y ronda (restricción `UNIQUE`), con IP y hora |
++| `plays` | Historial de reproducción con su origen (votación, admin, inicio) |
++| `announcement_plays` | Historial de anuncios reproducidos |
++| `settings` | Ajustes clave-valor JSON: `round_seconds`, `tie_break`, `no_votes`, `recent_window`, `excluded_restrictions`, `fallback_playlist_id`, `context_override` |
++
++## Respaldos
++
++- **Configuración** (catálogo, listas, reglas, eventos, anuncios con su audio y ajustes): Panel → Ajustes → *Descargar respaldo*. Restaurar combina por `id` y no borra el historial.
++- **Base completa** (incluye historial y votos): `pg_dump "$DATABASE_URL" > respaldo.sql` y `psql "$DATABASE_URL" < respaldo.sql`. Los planes de pago de Render incluyen respaldos diarios automáticos.
+diff --git a/docs/INSTALACION_Y_DESPLIEGUE.md b/docs/INSTALACION_Y_DESPLIEGUE.md
+new file mode 100644
+index 0000000..bd2b815
+--- /dev/null
++++ b/docs/INSTALACION_Y_DESPLIEGUE.md
+@@ -0,0 +1,78 @@
++# Manual de instalación y despliegue
++
++## 1. Cuentas y claves necesarias
++
++| Servicio | Para qué | Cómo obtenerla |
++|---|---|---|
++| GitHub | Repositorio y despliegue automático | Acceso al repo `wa1o/radio-campus` |
++| Render (u otro alojamiento Node + PostgreSQL) | Servidor con HTTPS y base de datos | render.com, cuenta con método de pago para planes sin suspensión |
++| Google Cloud | Text-to-Speech y YouTube Data API v3 | Crear proyecto → habilitar ambas APIs → *Credenciales* → *Crear clave de API*. TTS exige una cuenta de facturación aunque el uso quede en la capa gratuita |
++
++Restringe cada clave de API en Google Cloud a la API que usa (Text-to-Speech o YouTube Data API v3).
++
++## 2. Instalación local
++
++```bash
++git clone https://github.com/wa1o/radio-campus.git
++cd radio-campus
++cp .env.example .env
++```
++
++Edita `.env`:
++
++- `DATABASE_URL`: p. ej. `postgres://postgres:tu_clave@localhost:5432/radio_campus` (crea la base antes en pgAdmin o con `createdb`).
++- `JWT_SECRET` y `SCREEN_KEY`: cadenas largas y aleatorias, p. ej. `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
++- `ADMIN_EMAIL` / `ADMIN_PASSWORD`: primer administrador.
++- `GOOGLE_TTS_API_KEY`, `YOUTUBE_API_KEY`: opcionales para probar, necesarias en producción.
++
++```bash
++npm run build
++npm start
++```
++
++Abre:
++
++- Panel: http://localhost:3000/admin
++- Pantalla: http://localhost:3000/screen?key=TU_SCREEN_KEY → pulsa **Activar pantalla** (los navegadores exigen un clic antes de reproducir audio)
++- Votación: http://localhost:3000/vote (desde un teléfono en la misma red usa la IP de la computadora, p. ej. `http://192.168.1.20:3000/vote`)
++
++## 3. Despliegue en Render (recomendado)
++
++1. Sube los cambios a GitHub.
++2. En Render: **New → Blueprint**, elige el repositorio. Render lee `render.yaml` y crea:
++   - `radio-campus` (servicio web Node, plan Starter, siempre encendido)
++   - `radio-campus-db` (PostgreSQL Basic-256mb)
++   `JWT_SECRET` y `SCREEN_KEY` se generan solos; `DATABASE_URL` se conecta sola.
++3. Completa en el servicio web → *Environment* los valores marcados para capturar: `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `GOOGLE_TTS_API_KEY`, `YOUTUBE_API_KEY`.
++4. Espera el primer despliegue. Render asigna `https://radio-campus-XXXX.onrender.com` con HTTPS.
++5. Comprueba `https://…/api/health` → `{"ok":true,"db":true,…}`.
++6. Consulta el valor de `SCREEN_KEY` en *Environment* y abre la pantalla con `https://…/screen?key=ESE_VALOR`.
++7. Opcional: dominio propio (p. ej. `radio.iest.edu.mx`) en *Settings → Custom Domains*; Render emite el certificado.
++
++Cada `git push` a la rama principal vuelve a desplegar. Las variables se cambian sin tocar el código.
++
++> Los planes gratuitos de Render no sirven para operar: el servicio web se suspende tras 15 min sin tráfico (la pantalla perdería la conexión) y la base gratuita se elimina a los 30 días. Úsalos solo para demostraciones cortas.
++
++### Alternativas
++
++Cualquier plataforma con Node ≥ 18, WebSockets y PostgreSQL funciona (Railway, Fly.io, un VPS con Nginx + Certbot). Comandos: build `npm run build`, start `npm start`, health check `/api/health`. Si la base exige SSL, define `PGSSL=true`. Debe ejecutarse **una sola instancia**.
++
++## 4. Puesta en marcha de la pantalla del campus
++
++1. Computadora o mini-PC conectada a la pantalla y a bocinas, con Chrome o Edge.
++2. Abre la URL de la pantalla en modo kiosco, p. ej. `chrome --kiosk "https://…/screen?key=…"`, y pulsa **Activar pantalla**.
++3. Desactiva la suspensión de pantalla y de equipo.
++4. El reproductor de YouTube debe quedar visible (mínimo 200×200 px); así lo exigen las políticas de YouTube.
++
++## 5. Restablecer el servicio
++
++| Situación | Acción |
++|---|---|
++| La pantalla muestra «Sin conexión» | Revisa la red; se reconecta sola. Si no, recarga la página y pulsa *Activar pantalla* |
++| `/api/health` falla | En Render, revisa *Logs* y *Events*; usa *Manual Deploy → Restart*. Verifica que la base esté activa |
++| Programación detenida | Panel → Control: revisa «Último error», *Reanudar* o *Saltar* |
++| Configuración dañada o borrada | Panel → Ajustes → *Restaurar desde archivo* con el último respaldo JSON |
++| Pérdida de la base | Crea una base nueva, apunta `DATABASE_URL` a ella, reinicia (se recrea el esquema) y restaura el respaldo JSON o un `pg_dump` |
++| Se olvidó la contraseña del administrador | Cambia `ADMIN_EMAIL` a un correo nuevo con nueva `ADMIN_PASSWORD` y reinicia: se crea ese administrador |
++
++Recomendación: descargar un respaldo de configuración después de cada cambio importante y una vez por semana.
+diff --git a/docs/MANUAL_ADMIN.md b/docs/MANUAL_ADMIN.md
+new file mode 100644
+index 0000000..a5e9053
+--- /dev/null
++++ b/docs/MANUAL_ADMIN.md
+@@ -0,0 +1,85 @@
++# Manual de operación para el administrador
++
++Entra a `https://<tu-dominio>/admin` con tu correo y contraseña. La sesión dura 8 horas.
++
++## Control (pantalla principal)
++
++- **Estado**: fase (reproduciendo, anuncio, en espera), si la pantalla del campus está conectada, reglas aplicadas y contexto actual (hora, temperatura, eventos). Si ves «Contexto simulado activo», alguien dejó una simulación en Ajustes.
++- **Sonando / Ronda / Cola**: canción actual, votos en vivo y la que sigue.
++- **Pausar / Reanudar**: detiene música y temporizador; al reanudar la ronda continúa con el tiempo que le quedaba.
++- **Saltar**: termina la canción o el anuncio actual y pasa a la siguiente.
++- **Regenerar ronda**: descarta la votación abierta y propone dos opciones nuevas con el contexto actual (útil tras cambiar reglas o eventos).
++- **Fijar como siguiente**: elige manualmente la próxima canción; tiene prioridad sobre la votación.
++- **Último error**: fallas del reproductor o falta de canciones.
++
++## Canciones
++
++Cada canción necesita título, artista, proveedor y referencia:
++
++- **YouTube**: el ID de 11 caracteres del video (lo que sigue a `v=` en el enlace).
++- **Audio licenciado**: URL directa HTTPS a un archivo de audio con licencia de reproducción pública.
++
++Etiquetas que usa el algoritmo: **género**, **energía** (baja/media/alta), **ambiente** (p. ej. alegre, tranquilo, fresco), **temáticas** (p. ej. navidad, día-del-estudiante) y **restricciones** (p. ej. `explicit`). Usa siempre las mismas palabras, en minúsculas, porque las reglas comparan texto exacto.
++
++**Traer playlist de YouTube**: pega el enlace de una playlist pública; se importan hasta 500 videos sin etiquetas y se crea una lista con ellos. Después edita cada canción para etiquetarla. Desactiva (no borres) las canciones que ya no quieras ofrecer; las que tienen historial no se pueden eliminar.
++
++## Listas
++
++Agrupan canciones. Al menos una debe ser la **lista de respaldo** (se elige en Ajustes): música segura para cualquier momento, con varias canciones, que se usa cuando no hay opciones suficientes o faltan datos de clima o calendario.
++
++## Reglas contextuales
++
++Una regla tiene **condiciones** (cuándo aplica) y **filtros** (qué música permite).
++
++- Condiciones: rango horario (admite cruzar medianoche, p. ej. 22:00–02:00), temperatura mínima y/o máxima, tipo de evento activo. Las condiciones vacías no restringen.
++- Filtros: géneros, energías (`low`, `medium`, `high`), ambientes y temáticas, separados por comas. Vacío = cualquiera.
++- **Prioridad**: número mayor gana. Si varias reglas coinciden, se combinan: cada filtro lo define la de mayor prioridad que lo tenga y las demás completan el resto.
++- **Exclusiva**: si coincide, se ignoran las reglas de menor prioridad.
++
++Ejemplo de configuración:
++
++| Regla | Prioridad | Condición | Filtros |
++|---|---|---|---|
++| Mañana | 1 | 07:00–12:00 | energía: medium |
++| Mediodía | 1 | 12:00–15:00 | energía: high |
++| Calor | 2 | temp. mín. 32 | ambientes: fresco, tranquilo |
++| Navidad | 5 | evento: Festividad | temáticas: navidad |
++| Exámenes | 10, exclusiva | evento: Exámenes | géneros: instrumental · energía: low |
++
++Si una combinación deja menos de dos canciones, el sistema descarta primero las reglas de menor prioridad; si aun así no alcanza, usa la lista de respaldo.
++
++## Eventos
++
++Registra festividades (tipo *Festividad*), periodos de exámenes (*Exámenes*) y otros (*Evento*) con inicio y fin. Mientras un evento está vigente activa las reglas de su tipo. Los tres más próximos se muestran en la pantalla pública.
++
++## Anuncios
++
++1. **Crear**: escribe el texto (claro y breve; se lee en voz alta), la vigencia (desde/hasta), el horario del día en que puede sonar y la frecuencia (cada *N* canciones).
++2. **Generar voz**: crea el audio con Google Text-to-Speech.
++3. **Escuchar**: revisa la vista previa.
++4. **Aprobar**: solo los anuncios aprobados y con voz se reproducen y se muestran en la pantalla.
++
++Si editas el texto, el audio se borra y el anuncio vuelve a borrador para que lo revises de nuevo. Los anuncios vencidos o fuera de horario no suenan. **Retirar** lo devuelve a borrador.
++
++## Estadísticas
++
++Rondas cerradas, rondas sin votos, total y promedio de votos, historial de las últimas 50 rondas (candidatas, votos, ganadora, cómo se resolvió y qué regla aplicó) y de reproducciones. Desde el historial puedes ver los votos de cada ronda.
++
++## Ajustes
++
++- **Duración de la ronda** en segundos (recomendado: 60–120; si es mayor que la canción, la ronda cierra cuando termina la canción).
++- **Desempate**: aleatorio, la menos reproducida o la primera opción.
++- **Ronda sin votos**: aleatoria entre las dos o una canción de la lista de respaldo.
++- **Evitar repetir** las últimas *N* canciones.
++- **Restricciones excluidas**: etiquetas que nunca se ofrecen (p. ej. `explicit`).
++- **Lista de respaldo**.
++- **Simulación de contexto**: fija hora, temperatura o evento para demostraciones. Déjala vacía en operación normal.
++- **Respaldo de configuración**: *Descargar respaldo* (JSON) y *Restaurar desde archivo*.
++
++Los cambios se guardan en la base de datos y se aplican desde la siguiente ronda (o de inmediato con *Regenerar ronda*), sin tocar el código.
++
++## Rutina sugerida
++
++- Inicio del día: revisar en Control que la pantalla esté conectada y sin errores.
++- Semanal: registrar eventos próximos, preparar anuncios y descargar un respaldo.
++- Al iniciar exámenes o festividades: comprobar que exista el evento y que la regla correspondiente tenga canciones suficientes.
+diff --git a/docs/PRUEBAS.md b/docs/PRUEBAS.md
+new file mode 100644
+index 0000000..fea8550
+--- /dev/null
++++ b/docs/PRUEBAS.md
+@@ -0,0 +1,62 @@
++# Pruebas y evidencias
++
++## Pruebas automáticas
++
++```bash
++cd server
++npm test        # unitarias
++TEST_DATABASE_URL=postgres://usuario:clave@localhost/radio_test npm run test:e2e
++```
++
++### Unitarias (`test/context.test.js`, `test/youtube.test.js`)
++
++11 pruebas, todas aprobadas. Cubren rangos horarios que cruzan medianoche, evaluación de condiciones, combinación de reglas por prioridad (la temperatura ajusta el ambiente dentro de la franja horaria), regla exclusiva de exámenes, selección temática por festividad, relajación de reglas, caso sin reglas e importación de playlists de YouTube.
++
++### Integración: ronda completa (`test/e2e.test.js`)
++
++Levanta el servidor real contra PostgreSQL 16, simula la pantalla del campus con un cliente Socket.IO y varios teléfonos con cookies independientes. Ronda de 3 segundos. Salida de una ejecución (19/11/2026, aprobada en 4 de 4 ejecuciones):
++
++- login de administrador OK; /api/admin sin token → 401
++- catálogo: 8 canciones, 2 reglas, lista de respaldo #1
++- ronda #1: Pop 1 vs Pop 3 (regla: Día energético)
++- votos: Pop 1=2, Pop 3=1; voto repetido → 409 «Ya votaste en esta ronda»
++- cierre automático: ganó «Pop 1» (votos); voto tardío → 409
++- reproduce la ganadora: https://audio.example.edu/Pop%201.mp3
++- contexto cambiado a exámenes: Pop 2 vs Rock 1 → Instrumental 3 vs Instrumental 1
++- ronda sin votos → «Rock 1» (sin votos: respaldo)
++- anuncio #1 entre canciones; luego suena «Rock 1»
++- tras reiniciar: ajustes iguales, 8 canciones, 2 rondas cerradas en historial
++- respaldo exportado (8 canciones, 2 reglas) y restaurado
++
++Qué comprueba cada paso:
++
++| Criterio de aceptación | Verificación automática |
++|---|---|
++| Selección contextual de dos canciones | Las candidatas cumplen la regla activa (pop/rock), excluyen la canción `explicit` y la canción actual |
++| Registro de votos desde distintos dispositivos | Tres dispositivos votan; el voto repetido y el voto a una opción ajena se rechazan |
++| Cierre automático y resultado | El servidor cierra la ronda con su temporizador, declara la ganadora por votos y rechaza votos tardíos |
++| Reproducción de la ganadora | Al terminar la canción, la pantalla recibe el comando `play` con la canción ganadora |
++| Un cambio de contexto cambia las opciones | Al activar un evento de exámenes, la ronda regenerada solo ofrece instrumental |
++| Rondas sin participación | Se resuelven con la lista de respaldo, según la regla configurada |
++| Anuncio autorizado entre canciones | Suena el anuncio vigente (no el vencido) y después la música, sin superponerse |
++| Ajustes persistentes al recargar | Tras reiniciar el servidor, los ajustes, el catálogo y el historial se conservan |
++| Respaldos | El respaldo JSON se exporta y restaura los valores modificados |
++| Seguridad | El panel sin token responde 401 |
++
++## Pruebas manuales (en el entorno publicado)
++
++Elementos que la prueba automática simula y deben verificarse a mano con la pantalla real:
++
++| # | Prueba | Resultado esperado | Resultado |
++|---|---|---|---|
++| 1 | Abrir `/screen?key=…` en la pantalla horizontal y pulsar *Activar pantalla* | Suena la música de YouTube; se ven canción actual, dos opciones, QR, temporizador y avisos | |
++| 2 | Escanear el QR con dos teléfonos distintos (Android e iPhone) y votar | Confirmación en cada teléfono; el conteo sube en la pantalla al instante | |
++| 3 | Intentar votar dos veces desde el mismo teléfono | Mensaje «Ya votaste en esta ronda» | |
++| 4 | Esperar el fin del temporizador | La pantalla muestra la ganadora; al terminar la canción suena esa canción | |
++| 5 | Ajustes → simular evento Exámenes → Control → *Regenerar ronda* | Las nuevas opciones son de la regla de exámenes | |
++| 6 | Crear anuncio → *Generar voz* → *Escuchar* → *Aprobar* (frecuencia 1) | Al terminar la canción se oye el anuncio y luego la siguiente canción | |
++| 7 | Cambiar la duración de la ronda y recargar el panel | El valor se conserva | |
++| 8 | Desconectar la red de la pantalla 10 s y reconectar | Indicador «Sin conexión», reconexión automática y reproducción continúa | |
++| 9 | *Pausar* y *Reanudar* desde el panel | Música y temporizador se detienen y continúan | |
++
++Se recomienda grabar un video corto de los pasos 1 a 6 como evidencia de la demostración integrada.
+diff --git a/docs/SERVICIOS_Y_COSTOS.md b/docs/SERVICIOS_Y_COSTOS.md
+new file mode 100644
+index 0000000..1f84b2d
+--- /dev/null
++++ b/docs/SERVICIOS_Y_COSTOS.md
+@@ -0,0 +1,53 @@
++# Servicios externos, requisitos de acceso y costos de operación
++
++Precios consultados en noviembre de 2026, en dólares estadounidenses. Verifica las páginas oficiales antes de presupuestar; pueden cambiar.
++
++## Resumen
++
++| Servicio | Uso en el sistema | Cuenta / acceso | Costo estimado mensual |
++|---|---|---|---|
++| Render: servicio web Starter | Servidor Node.js, HTTPS, despliegue desde GitHub | Cuenta Render con tarjeta | US$7 |
++| Render: PostgreSQL Basic-256mb | Base de datos persistente | Misma cuenta | US$6 + almacenamiento (US$0.30/GB) |
++| Google Cloud Text-to-Speech | Voz de los anuncios | Proyecto de Google Cloud con facturación activa + clave de API | US$0 dentro de la capa gratuita |
++| YouTube IFrame Player | Reproducción de la música en la pantalla | Ninguna | US$0 |
++| YouTube Data API v3 | Importar playlists desde el panel | Clave de API en el mismo proyecto de Google Cloud | US$0 (cuota diaria gratuita) |
++| Open-Meteo | Temperatura local | Ninguna (sin clave) | US$0 para uso no comercial |
++| GitHub | Repositorio | Cuenta gratuita | US$0 |
++| Dominio propio (opcional) | p. ej. `radio.iest.edu.mx` | DNS de la universidad | Según la institución |
++| **Total aproximado** | | | **≈ US$13–15 al mes** |
++
++## Detalle y límites
++
++### Render
++
++- Una base Basic-256mb y un servicio Starter siempre encendido rondan US$13 al mes antes de crecer en almacenamiento o ancho de banda.
++- La base gratuita de Render tiene un límite de 30 días; antes de ese plazo hay que pasar los datos a Basic-256mb (US$6).
++- El servicio web gratuito se suspende tras 15 minutos sin tráfico y tarda en reactivarse, lo que desconectaría la pantalla. No usarlo en operación.
++- Limitación del sistema: debe correr **una sola instancia**; no activar escalado horizontal.
++
++### Google Cloud Text-to-Speech
++
++- Para usar Text-to-Speech hay que habilitar la facturación; se cobra automáticamente solo lo que exceda los caracteres gratuitos del mes.
++- Capa gratuita: las voces Standard incluyen 4 millones de caracteres gratis al mes; las Neural2 incluyen 1 millón y después cuestan US$16 por millón.
++- El audio se genera **una sola vez** por anuncio y se guarda en la base; reproducirlo no vuelve a cobrar. Un anuncio típico tiene 150–300 caracteres, así que el consumo real es de unos miles de caracteres al mes.
++- Recomendación: crear una alerta de presupuesto en Google Cloud (p. ej. US$1).
++
++### YouTube
++
++- El reproductor incrustado tiene reglas: tamaño mínimo y no reproducir automáticamente hasta que el reproductor esté visible en más de la mitad. La pantalla muestra el reproductor a 356×200 px para cumplirlas.
++- Las políticas de desarrollador prohíben permitir la reproducción en segundo plano del reproductor de YouTube, por eso el reproductor debe permanecer visible en la pantalla.
++- YouTube Data API: cuota gratuita de 10,000 unidades diarias por proyecto; importar una playlist de 500 videos consume alrededor de 11 unidades.
++- Algunos videos no permiten inserción o están bloqueados por región; el sistema los salta y registra el error.
++
++### Open-Meteo
++
++- Gratuito y sin clave para uso no comercial. El sistema consulta como máximo cada 10 minutos (≈144 llamadas al día). Si deja de responder, se usa la lista de respaldo.
++
++## Licencias de música (requisito no técnico)
++
++Reproducir música en un espacio público del campus es una **comunicación pública** que en México normalmente requiere licencia de las sociedades de gestión (autores y compositores, intérpretes y productores de fonogramas). Los términos de YouTube cubren la visualización personal, no la ambientación de espacios públicos. Antes de operar:
++
++1. Consultar con el área jurídica de la universidad si ya existe una licencia vigente de música ambiental o de radio universitaria.
++2. Si no, usar para el catálogo música con licencia de reproducción pública (bibliotecas libres de regalías o contenido propio), cargada como **Audio licenciado**, o tramitar la licencia correspondiente.
++
++El sistema admite ambos proveedores para que la institución elija según los permisos que tenga.
+diff --git a/render.yaml b/render.yaml
+new file mode 100644
+index 0000000..fceecc1
+--- /dev/null
++++ b/render.yaml
+@@ -0,0 +1,44 @@
++# Blueprint de Render: servicio web + PostgreSQL administrado.
++# En Render: New > Blueprint > selecciona este repositorio.
++services:
++  - type: web
++    name: radio-campus
++    runtime: node
++    plan: starter
++    buildCommand: npm run build
++    startCommand: npm start
++    healthCheckPath: /api/health
++    envVars:
++      - key: NODE_VERSION
++        value: "22"
++      - key: DATABASE_URL
++        fromDatabase:
++          name: radio-campus-db
++          property: connectionString
++      - key: PGSSL
++        value: "true"
++      - key: JWT_SECRET
++        generateValue: true
++      - key: SCREEN_KEY
++        generateValue: true
++      - key: ADMIN_EMAIL
++        sync: false
++      - key: ADMIN_PASSWORD
++        sync: false
++      - key: YOUTUBE_API_KEY
++        sync: false
++      - key: GOOGLE_TTS_API_KEY
++        sync: false
++      - key: TTS_LANGUAGE
++        value: es-US
++      - key: STATION_TZ
++        value: America/Mexico_City
++      - key: STATION_LAT
++        value: "22.2553"
++      - key: STATION_LON
++        value: "-97.8686"
++
++databases:
++  - name: radio-campus-db
++    plan: basic-256mb
++    databaseName: radio_campus
+diff --git a/server/package-lock.json b/server/package-lock.json
+index bab49d2..5189641 100644
+--- a/server/package-lock.json
++++ b/server/package-lock.json
+@@ -16,6 +16,9 @@
+         "radio-campus": "file:..",
+         "socket.io": "^4.8.1"
+       },
++      "devDependencies": {
++        "socket.io-client": "^4.8.4"
++      },
+       "engines": {
+         "node": ">=18.11"
+       }
+@@ -315,6 +318,45 @@
+         "node": ">=10.2.0"
+       }
+     },
++    "node_modules/engine.io-client": {
++      "version": "6.6.8",
++      "resolved": "https://registry.npmjs.org/engine.io-client/-/engine.io-client-6.6.8.tgz",
++      "integrity": "sha512-DPN6+2uNi3A2cbSR3gqJepLVOnSQmbaJT4USgU+TgGPczEqLQT0i6t05jHrf4TT6rcxABrGp/1As0FyqwIZlGg==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@socket.io/component-emitter": "~3.1.0",
++        "debug": "~4.4.1",
++        "engine.io-parser": "~5.2.1",
++        "ws": "~8.21.0",
++        "xmlhttprequest-ssl": "~2.1.1"
++      }
++    },
++    "node_modules/engine.io-client/node_modules/debug": {
++      "version": "4.4.3",
++      "resolved": "https://registry.npmjs.org/debug/-/debug-4.4.3.tgz",
++      "integrity": "sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "ms": "^2.1.3"
++      },
++      "engines": {
++        "node": ">=6.0"
++      },
++      "peerDependenciesMeta": {
++        "supports-color": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/engine.io-client/node_modules/ms": {
++      "version": "2.1.3",
++      "resolved": "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz",
++      "integrity": "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/engine.io-parser": {
+       "version": "5.2.3",
+       "resolved": "https://registry.npmjs.org/engine.io-parser/-/engine.io-parser-5.2.3.tgz",
+@@ -1245,6 +1287,47 @@
+       "integrity": "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==",
+       "license": "MIT"
+     },
++    "node_modules/socket.io-client": {
++      "version": "4.8.4",
++      "resolved": "https://registry.npmjs.org/socket.io-client/-/socket.io-client-4.8.4.tgz",
++      "integrity": "sha512-7wjKAvVXYOJsbmUgkWbnhPD4bFpkqrUR0++XOjpGFmqDqsqV1CI93VTraeExLxpjxEqrWgFoSRZu1ihjLWfkAA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@socket.io/component-emitter": "~3.1.0",
++        "debug": "~4.4.1",
++        "engine.io-client": "~6.6.1",
++        "socket.io-parser": "~4.2.4"
++      },
++      "engines": {
++        "node": ">=10.0.0"
++      }
++    },
++    "node_modules/socket.io-client/node_modules/debug": {
++      "version": "4.4.3",
++      "resolved": "https://registry.npmjs.org/debug/-/debug-4.4.3.tgz",
++      "integrity": "sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "ms": "^2.1.3"
++      },
++      "engines": {
++        "node": ">=6.0"
++      },
++      "peerDependenciesMeta": {
++        "supports-color": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/socket.io-client/node_modules/ms": {
++      "version": "2.1.3",
++      "resolved": "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz",
++      "integrity": "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/socket.io-parser": {
+       "version": "4.2.7",
+       "resolved": "https://registry.npmjs.org/socket.io-parser/-/socket.io-parser-4.2.7.tgz",
+@@ -1398,6 +1481,15 @@
+         }
+       }
+     },
++    "node_modules/xmlhttprequest-ssl": {
++      "version": "2.1.2",
++      "resolved": "https://registry.npmjs.org/xmlhttprequest-ssl/-/xmlhttprequest-ssl-2.1.2.tgz",
++      "integrity": "sha512-TEU+nJVUUnA4CYJFLvK5X9AOeH4KvDvhIfm0vV1GaQRtchnG0hgK5p8hw/xjv8cunWYCsiPCSDzObPyhEwq3KQ==",
++      "dev": true,
++      "engines": {
++        "node": ">=0.4.0"
++      }
++    },
+     "node_modules/xtend": {
+       "version": "4.0.2",
+       "resolved": "https://registry.npmjs.org/xtend/-/xtend-4.0.2.tgz",
+diff --git a/server/package.json b/server/package.json
+index 38fa028..2690f89 100644
+--- a/server/package.json
++++ b/server/package.json
+@@ -8,7 +8,8 @@
+   "scripts": {
+     "start": "node src/index.js",
+     "dev": "node --watch src/index.js",
+-    "test": "node --test"
++    "test": "node --test test/context.test.js test/youtube.test.js",
++    "test:e2e": "node --test --test-concurrency=1 test/e2e.test.js"
+   },
+   "dependencies": {
+     "bcryptjs": "^2.4.3",
+@@ -20,5 +21,8 @@
+     "pg": "^8.13.1",
+     "radio-campus": "file:..",
+     "socket.io": "^4.8.1"
++  },
++  "devDependencies": {
++    "socket.io-client": "^4.8.4"
+   }
+ }
+diff --git a/server/src/backup.js b/server/src/backup.js
+new file mode 100644
+index 0000000..245cc54
+--- /dev/null
++++ b/server/src/backup.js
+@@ -0,0 +1,67 @@
++import { query, transaction } from './db.js';
++
++// Tablas de configuración incluidas en el respaldo, en orden de dependencias.
++// No incluye administradores (contraseñas) ni el historial de rondas y votos.
++const TABLES = {
++  songs: ['id', 'title', 'artist', 'provider', 'stream_ref', 'genre', 'energy', 'mood', 'themes', 'restrictions', 'active', 'created_at'],
++  playlists: ['id', 'name'],
++  events: ['id', 'name', 'type', 'starts_at', 'ends_at'],
++  context_rules: ['id', 'name', 'priority', 'condition', 'filters', 'active'],
++  announcements: ['id', 'text', 'status', 'audio', 'audio_mime', 'valid_from', 'valid_to', 'hour_from', 'hour_to', 'every_n_songs', 'created_at'],
++};
++const JSON_COLUMNS = new Set(['condition', 'filters']);
++export const BACKUP_VERSION = 1;
++
++const httpError = (status, message) => Object.assign(new Error(message), { status, expose: true });
++
++export async function exportBackup() {
++  const data = { version: BACKUP_VERSION, exported_at: new Date().toISOString() };
++  for (const [table, cols] of Object.entries(TABLES)) {
++    const { rows } = await query(`SELECT ${cols.join(', ')} FROM ${table} ORDER BY id`);
++    data[table] = rows.map(row => (row.audio ? { ...row, audio: row.audio.toString('base64') } : row));
++  }
++  data.playlist_songs = (await query('SELECT playlist_id, song_id FROM playlist_songs ORDER BY playlist_id, song_id')).rows;
++  data.settings = (await query('SELECT key, value FROM settings ORDER BY key')).rows;
++  return data;
++}
++
++// Restaura combinando: actualiza los registros con el mismo id e inserta los
++// que falten. No borra registros existentes, para no romper el historial.
++export async function importBackup(data) {
++  if (!data || data.version !== BACKUP_VERSION) throw httpError(400, 'Archivo de respaldo no válido o de otra versión');
++  return transaction(async client => {
++    const counts = {};
++    for (const [table, cols] of Object.entries(TABLES)) {
++      const rows = Array.isArray(data[table]) ? data[table] : [];
++      const updates = cols.filter(c => c !== 'id').map(c => `${c} = EXCLUDED.${c}`).join(', ');
++      for (const row of rows) {
++        const values = cols.map(c => {
++          const v = row[c] ?? null;
++          if (c === 'audio' && v) return Buffer.from(v, 'base64');
++          if (JSON_COLUMNS.has(c)) return JSON.stringify(v ?? {});
++          return v;
++        });
++        const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
++        await client.query(
++          `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders}) ON CONFLICT (id) DO UPDATE SET ${updates}`,
++          values,
++        );
++      }
++      await client.query(`SELECT setval(pg_get_serial_sequence('${table}', 'id'), GREATEST((SELECT COALESCE(max(id), 0) FROM ${table}), 1))`);
++      counts[table] = rows.length;
++    }
++    const links = Array.isArray(data.playlist_songs) ? data.playlist_songs : [];
++    for (const link of links) {
++      await client.query('INSERT INTO playlist_songs (playlist_id, song_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [link.playlist_id, link.song_id]);
++    }
++    counts.playlist_songs = links.length;
++    for (const { key, value } of Array.isArray(data.settings) ? data.settings : []) {
++      await client.query(
++        'INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value',
++        [key, JSON.stringify(value)],
++      );
++    }
++    counts.settings = data.settings?.length ?? 0;
++    return counts;
++  });
++}
+diff --git a/server/src/context.js b/server/src/context.js
+index ad03c78..535abc8 100644
+--- a/server/src/context.js
++++ b/server/src/context.js
+@@ -3,12 +3,15 @@ import { getSettings } from './settings.js';
+ 
+ const TZ = process.env.STATION_TZ || 'America/Mexico_City';
+ const WEATHER_TTL_MS = 10 * 60 * 1000;
++// Coordenadas por defecto: Tampico, Tamaulipas.
++const LAT = process.env.STATION_LAT || '22.2553';
++const LON = process.env.STATION_LON || '-97.8686';
+ let weather = { at: 0, temp: null, ok: false };
+ 
+ async function getTemperature() {
+   if (Date.now() - weather.at < WEATHER_TTL_MS) return weather;
+   try {
+-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${process.env.STATION_LAT}&longitude=${process.env.STATION_LON}&current=temperature_2m`;
++    const url = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m`;
+     const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+     const json = await res.json();
+@@ -35,18 +38,33 @@ async function activeEventTypes() {
+   return rows.map(r => r.type);
+ }
+ 
+-async function getContext() {
++export async function getContext(override = null) {
+   const [w, eventTypes] = await Promise.all([getTemperature(), activeEventTypes().catch(() => null)]);
+-  return {
++  const ctx = {
+     hhmm: localClock().hhmm,
+     temp: w.temp,
+     weatherOk: w.ok,
+     eventTypes: eventTypes ?? [],
+     eventsOk: eventTypes !== null,
++    simulated: false,
+   };
++  // Simulación de contexto desde el panel (pruebas y demostraciones).
++  if (override && typeof override === 'object') {
++    if (override.hhmm) ctx.hhmm = override.hhmm;
++    if (override.temp != null && override.temp !== '') {
++      ctx.temp = Number(override.temp);
++      ctx.weatherOk = true;
++    }
++    if (override.event_type) {
++      ctx.eventTypes = [...new Set([...ctx.eventTypes, override.event_type])];
++      ctx.eventsOk = true;
++    }
++    ctx.simulated = Boolean(override.hhmm || override.temp != null || override.event_type);
++  }
++  return ctx;
+ }
+ 
+-function ruleMatches(cond, ctx) {
++export function ruleMatches(cond, ctx) {
+   if ((cond.time_from || cond.time_to) && !inTimeRange(ctx.hhmm, cond.time_from, cond.time_to)) return false;
+   if (cond.temp_min != null || cond.temp_max != null) {
+     if (ctx.temp == null) return false;
+@@ -57,7 +75,7 @@ function ruleMatches(cond, ctx) {
+   return true;
+ }
+ 
+-function passesFilters(song, f) {
++export function passesFilters(song, f) {
+   const allowed = (list, value) => !list?.length || list.includes(value);
+   return allowed(f.genres, song.genre)
+     && allowed(f.energy, song.energy)
+@@ -83,13 +101,44 @@ export async function fallbackSongs(settings, blocked = new Set()) {
+   return fresh.length >= 2 ? fresh : rows;
+ }
+ 
++const FILTER_KEYS = ['genres', 'energy', 'moods', 'themes'];
++
++// Combina las reglas que coinciden con el contexto. Para cada tipo de filtro
++// (géneros, energía, ambiente, temática) manda la regla de mayor prioridad que
++// lo defina; las de menor prioridad completan los filtros que queden libres.
++// Una regla marcada como exclusiva detiene la combinación.
++export function combineRules(matched) {
++  const filters = {};
++  const applied = [];
++  for (const rule of matched) {
++    applied.push(rule);
++    for (const key of FILTER_KEYS) {
++      const value = rule.filters?.[key];
++      if (value?.length && !filters[key]) filters[key] = value;
++    }
++    if (rule.condition?.exclusive) break;
++  }
++  return { filters, applied };
++}
++
++// Devuelve las canciones elegibles. Si las reglas combinadas dejan menos de
++// dos opciones, se descartan las reglas de menor prioridad una por una.
++export function selectPool(songs, matched) {
++  for (let n = matched.length; n >= 1; n--) {
++    const { filters, applied } = combineRules(matched.slice(0, n));
++    const pool = songs.filter(s => passesFilters(s, filters));
++    if (pool.length >= 2) return { pool, applied, relaxed: n < matched.length };
++  }
++  return { pool: matched.length ? [] : songs, applied: [], relaxed: false };
++}
++
+ export async function pickCandidates(excludeIds = []) {
+   const settings = await getSettings();
+-  const ctx = await getContext();
++  const ctx = await getContext(settings.context_override);
+   const degraded = !ctx.weatherOk || !ctx.eventsOk;
+ 
+   const { rows: rules } = await query('SELECT * FROM context_rules WHERE active ORDER BY priority DESC, id');
+-  const rule = rules.find(r => ruleMatches(r.condition, ctx));
++  const matched = rules.filter(r => ruleMatches(r.condition, ctx));
+ 
+   const { rows: recent } = await query('SELECT song_id FROM plays ORDER BY started_at DESC LIMIT $1', [settings.recent_window]);
+   const blocked = new Set([...recent.map(r => r.song_id), ...excludeIds]);
+@@ -99,13 +148,22 @@ export async function pickCandidates(excludeIds = []) {
+     [settings.excluded_restrictions],
+   );
+ 
+-  let pool = degraded ? [] : songs.filter(s => !blocked.has(s.id) && (!rule || passesFilters(s, rule.filters)));
+-  let ruleName = rule ? rule.name : 'sin regla';
++  let pool = [];
++  let ruleName = 'sin regla';
++  if (!degraded) {
++    const fresh = songs.filter(s => !blocked.has(s.id));
++    const picked = selectPool(fresh, matched);
++    pool = picked.pool;
++    if (picked.applied.length) {
++      ruleName = picked.applied.map(r => r.name).join(' + ') + (picked.relaxed ? ' (relajada)' : '');
++    }
++  }
+ 
+   if (pool.length < 2) {
+-    pool = (await fallbackSongs(settings, blocked)).filter(s => !excludeIds.includes(s.id));
++    const allowed = new Set(songs.map(s => s.id));
++    pool = (await fallbackSongs(settings, blocked)).filter(s => !excludeIds.includes(s.id) && allowed.has(s.id));
+     ruleName = degraded ? 'respaldo (sin datos de contexto)' : 'respaldo';
+   }
+ 
+   return { candidates: shuffle(pool).slice(0, 2), ruleName, context: ctx };
+-}
+\ No newline at end of file
++}
+diff --git a/server/src/director.js b/server/src/director.js
+index c3f4afd..daa5eb7 100644
+--- a/server/src/director.js
++++ b/server/src/director.js
+@@ -68,7 +68,13 @@ export class Director {
+       forcedNext: pub(this.forcedNext),
+       announcement: this.announcement,
+       ruleName: this.ruleName,
+-      context: this.context && { hhmm: this.context.hhmm, temp: this.context.temp, eventTypes: this.context.eventTypes },
++      context: this.context && {
++        hhmm: this.context.hhmm,
++        temp: this.context.temp,
++        eventTypes: this.context.eventTypes,
++        simulated: this.context.simulated,
++        degraded: !this.context.weatherOk || !this.context.eventsOk,
++      },
+       info: this.info,
+       lastError: this.lastError,
+     };
+@@ -358,6 +364,21 @@ export class Director {
+     else if (this.screenOnline) await this.bootstrap();
+   }
+ 
++  // Descarta la ronda abierta y propone dos opciones nuevas con el contexto
++  // actual (útil tras cambiar reglas, eventos o la simulación de contexto).
++  async reroll() {
++    if (this.phase !== 'playing') throw httpError(409, 'Solo se puede regenerar la ronda mientras suena una canción');
++    if (this.round?.status === 'open') {
++      clearTimeout(this.roundTimer);
++      await query("UPDATE rounds SET status = 'aborted', closed_at = now(), resolution = 'regenerada por el administrador' WHERE id = $1", [this.round.id]);
++    } else if (this.round?.status === 'closed') {
++      throw httpError(409, 'La ronda ya cerró; la ganadora sonará a continuación');
++    }
++    this.round = null;
++    this.remainingMs = null;
++    await this.openRound();
++  }
++
+   async setNext(songId) {
+     const { rows } = await query('SELECT * FROM songs WHERE id = $1 AND active', [songId]);
+     if (!rows[0]) throw httpError(404, 'Canción no encontrada o inactiva');
+diff --git a/server/src/index.js b/server/src/index.js
+index 241130a..65112b0 100644
+--- a/server/src/index.js
++++ b/server/src/index.js
+@@ -5,7 +5,7 @@ import path from 'node:path';
+ import { fileURLToPath } from 'node:url';
+ import cookieParser from 'cookie-parser';
+ import { Server } from 'socket.io';
+-import { migrate } from './db.js';
++import { migrate, query } from './db.js';
+ import { seedAdmin } from './auth.js';
+ import { Director } from './director.js';
+ import publicRoutes from './routes/public.js';
+@@ -13,6 +13,7 @@ import adminRoutes from './routes/admin.js';
+ 
+ const app = express();
+ app.set('trust proxy', 1);
++app.use('/api/admin/restore', express.json({ limit: '25mb' }));
+ app.use(express.json({ limit: '1mb' }));
+ app.use(cookieParser());
+ 
+@@ -20,6 +21,14 @@ const server = http.createServer(app);
+ const io = new Server(server);
+ const director = new Director(io);
+ 
++app.get('/api/health', async (_req, res) => {
++  try {
++    await query('SELECT 1');
++    res.json({ ok: true, db: true, screenOnline: director.screenOnline, phase: director.phase, uptime: Math.round(process.uptime()) });
++  } catch {
++    res.status(503).json({ ok: false, db: false });
++  }
++});
+ app.use('/api', publicRoutes(director));
+ app.use('/api/admin', adminRoutes(director));
+ 
+diff --git a/server/src/routes/admin.js b/server/src/routes/admin.js
+index 08eede6..26408d2 100644
+--- a/server/src/routes/admin.js
++++ b/server/src/routes/admin.js
+@@ -4,6 +4,7 @@ import { requireAdmin } from '../auth.js';
+ import { getSettings, saveSettings } from '../settings.js';
+ import { synthesize } from '../tts.js';
+ import { importYouTubePlaylist } from '../youtube.js';
++import { exportBackup, importBackup } from '../backup.js';
+ 
+ const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+ const httpError = (status, message) => Object.assign(new Error(message), { status, expose: true });
+@@ -155,7 +156,27 @@ export default function adminRoutes(director) {
+   }));
+ 
+   r.get('/settings', wrap(async (_req, res) => res.json(await getSettings())));
+-  r.put('/settings', wrap(async (req, res) => res.json(await saveSettings(req.body || {}))));
++  r.put('/settings', wrap(async (req, res) => {
++    const body = req.body || {};
++    const o = body.context_override;
++    if (o != null) {
++      if (typeof o !== 'object') throw httpError(400, 'Simulación de contexto no válida');
++      if (o.hhmm && !/^([01]\d|2[0-3]):[0-5]\d$/.test(o.hhmm)) throw httpError(400, 'La hora simulada debe tener formato HH:MM');
++      if (o.temp != null && o.temp !== '' && !Number.isFinite(Number(o.temp))) throw httpError(400, 'La temperatura simulada debe ser un número');
++    }
++    res.json(await saveSettings(body));
++  }));
++
++  r.get('/backup', wrap(async (_req, res) => {
++    const data = await exportBackup();
++    res.setHeader('Content-Disposition', `attachment; filename="radio-campus-respaldo-${data.exported_at.slice(0, 10)}.json"`);
++    res.json(data);
++  }));
++  r.post('/restore', wrap(async (req, res) => {
++    const counts = await importBackup(req.body);
++    await director.infoChanged();
++    res.json({ ok: true, counts });
++  }));
+ 
+   r.post('/control/:action', wrap(async (req, res) => {
+     const actions = {
+@@ -163,6 +184,7 @@ export default function adminRoutes(director) {
+       resume: () => director.resume(),
+       skip: () => director.skip(),
+       next: () => director.setNext(Number(req.body?.songId)),
++      reroll: () => director.reroll(),
+     };
+     const action = actions[req.params.action];
+     if (!action) return res.sendStatus(404);
+diff --git a/server/src/settings.js b/server/src/settings.js
+index 45616eb..1116edd 100644
+--- a/server/src/settings.js
++++ b/server/src/settings.js
+@@ -7,6 +7,7 @@ export const DEFAULTS = {
+   recent_window: 10,
+   excluded_restrictions: ['explicit'],
+   fallback_playlist_id: null,
++  context_override: null,
+ };
+ 
+ export async function getSettings() {
+diff --git a/server/test/context.test.js b/server/test/context.test.js
+new file mode 100644
+index 0000000..be9e7ab
+--- /dev/null
++++ b/server/test/context.test.js
+@@ -0,0 +1,70 @@
++import assert from 'node:assert/strict';
++import test from 'node:test';
++import { combineRules, selectPool, ruleMatches, inTimeRange, passesFilters } from '../src/context.js';
++
++const song = (id, genre, energy, mood, themes = []) => ({ id, genre, energy, mood, themes });
++const catalog = [
++  song(1, 'pop', 'medium', 'alegre'),
++  song(2, 'pop', 'high', 'alegre'),
++  song(3, 'instrumental', 'low', 'tranquilo'),
++  song(4, 'instrumental', 'low', 'fresco'),
++  song(5, 'rock', 'high', 'fresco'),
++  song(6, 'regional', 'high', 'alegre', ['navidad']),
++  song(7, 'pop', 'medium', 'navideño', ['navidad']),
++];
++const morning = { name: 'Mañana', priority: 1, condition: { time_from: '07:00', time_to: '12:00' }, filters: { energy: ['medium', 'low'] } };
++const hot = { name: 'Calor', priority: 2, condition: { temp_min: 30 }, filters: { moods: ['fresco', 'tranquilo'] } };
++const exams = { name: 'Exámenes', priority: 10, condition: { event_type: 'exam', exclusive: true }, filters: { genres: ['instrumental'], energy: ['low'] } };
++const xmas = { name: 'Navidad', priority: 5, condition: { event_type: 'holiday' }, filters: { themes: ['navidad'] } };
++
++test('inTimeRange admite rangos que cruzan la medianoche', () => {
++  assert.equal(inTimeRange('23:30', '22:00', '02:00'), true);
++  assert.equal(inTimeRange('03:00', '22:00', '02:00'), false);
++  assert.equal(inTimeRange('09:00', '07:00', '12:00'), true);
++});
++
++test('ruleMatches evalúa hora, temperatura y eventos', () => {
++  const ctx = { hhmm: '09:15', temp: 32, eventTypes: ['exam'] };
++  assert.equal(ruleMatches(morning.condition, ctx), true);
++  assert.equal(ruleMatches(hot.condition, ctx), true);
++  assert.equal(ruleMatches(exams.condition, ctx), true);
++  assert.equal(ruleMatches(xmas.condition, ctx), false);
++  assert.equal(ruleMatches(hot.condition, { ...ctx, temp: null }), false);
++});
++
++test('las reglas se combinan: la temperatura ajusta el ambiente dentro de la franja horaria', () => {
++  const { filters, applied } = combineRules([hot, morning]);
++  assert.deepEqual(filters, { moods: ['fresco', 'tranquilo'], energy: ['medium', 'low'] });
++  assert.deepEqual(applied.map(r => r.name), ['Calor', 'Mañana']);
++  const pool = catalog.filter(s => passesFilters(s, filters)).map(s => s.id);
++  assert.deepEqual(pool, [3, 4]);
++});
++
++test('una regla exclusiva de exámenes tiene prioridad sobre horario y temperatura', () => {
++  const { filters, applied } = combineRules([exams, hot, morning]);
++  assert.deepEqual(applied.map(r => r.name), ['Exámenes']);
++  assert.deepEqual(filters, { genres: ['instrumental'], energy: ['low'] });
++});
++
++test('una festividad activa la selección temática', () => {
++  const { pool, applied } = selectPool(catalog, [xmas]);
++  assert.deepEqual(pool.map(s => s.id), [6, 7]);
++  assert.deepEqual(applied.map(r => r.name), ['Navidad']);
++});
++
++test('si las reglas dejan menos de dos opciones se relajan las de menor prioridad', () => {
++  // Navidad + Mañana solo deja la canción 7; se descarta Mañana y quedan 6 y 7.
++  const out = selectPool(catalog, [xmas, morning]);
++  assert.deepEqual(out.pool.map(s => s.id), [6, 7]);
++  assert.equal(out.relaxed, true);
++  assert.deepEqual(out.applied.map(r => r.name), ['Navidad']);
++});
++
++test('si ni la regla principal deja dos opciones, no hay candidatas (se usará el respaldo)', () => {
++  const rare = { name: 'Rara', priority: 1, condition: {}, filters: { genres: ['jazz'] } };
++  assert.equal(selectPool(catalog, [rare]).pool.length, 0);
++});
++
++test('sin reglas que coincidan se usa todo el catálogo', () => {
++  assert.equal(selectPool(catalog, []).pool.length, catalog.length);
++});
+diff --git a/server/test/e2e.test.js b/server/test/e2e.test.js
+new file mode 100644
+index 0000000..ac903a4
+--- /dev/null
++++ b/server/test/e2e.test.js
+@@ -0,0 +1,232 @@
++// Prueba de integración de una ronda completa contra un PostgreSQL real.
++// Se ejecuta solo si existe TEST_DATABASE_URL (¡la base se vacía!):
++//   TEST_DATABASE_URL=postgres://... npm run test:e2e
++// La pantalla pública se simula con un cliente Socket.IO: los comandos de
++// reproducción se verifican, pero el audio real se comprueba en el navegador.
++import assert from 'node:assert/strict';
++import test from 'node:test';
++import { spawn } from 'node:child_process';
++import { once } from 'node:events';
++import pg from 'pg';
++import { io } from 'socket.io-client';
++
++const DB = process.env.TEST_DATABASE_URL;
++const PORT = 3999;
++const BASE = `http://127.0.0.1:${PORT}`;
++const ENV = {
++  ...process.env,
++  DATABASE_URL: DB,
++  PGSSL: 'false',
++  PORT: String(PORT),
++  JWT_SECRET: 'test-secret',
++  SCREEN_KEY: 'test-screen',
++  ADMIN_EMAIL: 'admin@test.mx',
++  ADMIN_PASSWORD: 'test-password',
++  STATION_LAT: '22.2553',
++  STATION_LON: '-97.8686',
++};
++const sleep = ms => new Promise(r => setTimeout(r, ms));
++const log = (...a) => console.log('   ·', ...a);
++
++let server;
++async function startServer() {
++  server = spawn(process.execPath, ['src/index.js'], { env: ENV, stdio: ['ignore', 'pipe', 'pipe'] });
++  server.stderr.on('data', d => process.stderr.write(d));
++  for (let i = 0; i < 50; i++) {
++    try {
++      if ((await fetch(`${BASE}/api/health`)).ok) return;
++    } catch {}
++    await sleep(200);
++  }
++  throw new Error('El servidor no arrancó');
++}
++async function stopServer() {
++  if (!server || server.exitCode !== null) return;
++  server.kill();
++  await once(server, 'exit');
++}
++
++// Cada "dispositivo" guarda su propia cookie voter_token.
++function device(name) {
++  let cookie = '';
++  return {
++    name,
++    async vote(songId) {
++      const res = await fetch(`${BASE}/api/vote`, {
++        method: 'POST',
++        headers: { 'Content-Type': 'application/json', ...(cookie && { Cookie: cookie }) },
++        body: JSON.stringify({ songId }),
++      });
++      const set = res.headers.get('set-cookie');
++      if (set) cookie = set.split(';')[0];
++      return { status: res.status, body: await res.json() };
++    },
++  };
++}
++
++let token;
++async function admin(path, method = 'GET', body) {
++  const res = await fetch(`${BASE}/api/admin${path}`, {
++    method,
++    headers: { Authorization: `Bearer ${token}`, ...(body && { 'Content-Type': 'application/json' }) },
++    body: body ? JSON.stringify(body) : undefined,
++  });
++  const text = await res.text();
++  const json = text ? JSON.parse(text) : null;
++  if (!res.ok) throw new Error(`${method} ${path} → ${res.status} ${text}`);
++  return json;
++}
++
++function screen() {
++  const socket = io(BASE, { auth: { role: 'screen', key: 'test-screen' }, transports: ['websocket'] });
++  const commands = [];
++  let state = null;
++  const waiters = [];
++  socket.on('command', c => { commands.push(c); waiters.splice(0).forEach(w => w()); });
++  socket.on('state', s => { state = s; waiters.splice(0).forEach(w => w()); });
++  const until = async (pred, label, ms = 10_000) => {
++    const end = Date.now() + ms;
++    while (Date.now() < end) {
++      const out = pred();
++      if (out) return out;
++      await new Promise(r => { waiters.push(r); setTimeout(r, 200); });
++    }
++    throw new Error(`Tiempo agotado esperando: ${label}`);
++  };
++  return { socket, commands, get state() { return state; }, until };
++}
++
++test('ronda completa con varios dispositivos, contexto, anuncios y persistencia', { skip: !DB && 'define TEST_DATABASE_URL', timeout: 90_000 }, async t => {
++  const db = new pg.Client({ connectionString: DB });
++  await db.connect();
++  await db.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
++  t.after(async () => { await stopServer(); await db.end(); });
++
++  await startServer();
++  const login = await fetch(`${BASE}/api/login`, {
++    method: 'POST', headers: { 'Content-Type': 'application/json' },
++    body: JSON.stringify({ email: ENV.ADMIN_EMAIL, password: ENV.ADMIN_PASSWORD }),
++  });
++  assert.equal(login.status, 200);
++  token = (await login.json()).token;
++  const unauth = await fetch(`${BASE}/api/admin/songs`);
++  assert.equal(unauth.status, 401, 'el panel exige autenticación');
++  log('login de administrador OK; /api/admin sin token → 401');
++
++  // Catálogo etiquetado
++  const tracks = [
++    ['Pop 1', 'pop', 'high', 'alegre'], ['Pop 2', 'pop', 'high', 'alegre'], ['Pop 3', 'pop', 'medium', 'alegre'],
++    ['Rock 1', 'rock', 'high', 'intenso'], ['Instrumental 1', 'instrumental', 'low', 'tranquilo'],
++    ['Instrumental 2', 'instrumental', 'low', 'tranquilo'], ['Instrumental 3', 'instrumental', 'low', 'tranquilo'],
++    ['Explícita', 'pop', 'high', 'alegre', ['explicit']],
++  ];
++  const songs = [];
++  for (const [title, genre, energy, mood, restrictions = []] of tracks) {
++    songs.push(await admin('/songs', 'POST', {
++      title, artist: 'Artista de prueba', provider: 'licensed_audio', stream_ref: `https://audio.example.edu/${encodeURIComponent(title)}.mp3`,
++      genre, energy, mood, themes: [], restrictions, active: true,
++    }));
++  }
++  const byId = Object.fromEntries(songs.map(s => [s.id, s]));
++  const playlist = await admin('/playlists', 'POST', { name: 'Respaldo' });
++  for (const s of songs.slice(0, 4)) await admin(`/playlists/${playlist.id}/songs`, 'POST', { songId: s.id });
++
++  await admin('/context_rules', 'POST', { name: 'Día energético', priority: 1, condition: {}, filters: { genres: ['pop', 'rock'] }, active: true });
++  await admin('/context_rules', 'POST', { name: 'Exámenes', priority: 10, condition: { event_type: 'exam', exclusive: true }, filters: { genres: ['instrumental'], energy: ['low'] }, active: true });
++  await admin('/settings', 'PUT', {
++    round_seconds: 3, tie_break: 'least_played', no_votes: 'fallback', recent_window: 0,
++    excluded_restrictions: ['explicit'], fallback_playlist_id: playlist.id,
++    context_override: { temp: 26 },
++  });
++  log(`catálogo: ${songs.length} canciones, 2 reglas, lista de respaldo #${playlist.id}`);
++
++  // La pantalla se conecta y arranca la programación
++  const scr = screen();
++  t.after(() => scr.socket.close());
++  const first = await scr.until(() => scr.commands.find(c => c.type === 'play'), 'primer comando play');
++  const round1 = await scr.until(() => scr.state?.round?.status === 'open' && scr.state.round, 'ronda abierta');
++  assert.equal(round1.candidates.length, 2);
++  for (const c of round1.candidates) {
++    assert.ok(['pop', 'rock'].includes(byId[c.id].genre), 'la regla contextual filtra los géneros');
++    assert.notEqual(byId[c.id].title, 'Explícita', 'se excluye contenido restringido');
++    assert.notEqual(c.id, songs.find(s => s.stream_ref === first.streamRef).id, 'no repite la canción actual');
++  }
++  log(`ronda #${round1.id}: ${round1.candidates.map(c => c.title).join(' vs ')} (regla: ${scr.state.ruleName})`);
++
++  // Votos desde tres dispositivos distintos
++  const [a, b] = round1.candidates;
++  const phones = ['teléfono A', 'teléfono B', 'teléfono C'].map(device);
++  assert.equal((await phones[0].vote(a.id)).status, 200);
++  assert.equal((await phones[1].vote(a.id)).status, 200);
++  assert.equal((await phones[2].vote(b.id)).status, 200);
++  const dup = await phones[0].vote(b.id);
++  assert.equal(dup.status, 409, 'un dispositivo no puede votar dos veces');
++  assert.equal((await device('teléfono D').vote(9999)).status, 400, 'se rechaza una opción que no está en la ronda');
++  log(`votos: ${a.title}=2, ${b.title}=1; voto repetido → 409 «${dup.body.error}»`);
++
++  // Cierre automático en el servidor y resultado
++  const closed = await scr.until(() => scr.state?.round?.id === round1.id && scr.state.round.status === 'closed' && scr.state.round, 'cierre automático');
++  assert.equal(closed.winner.id, a.id);
++  assert.equal(closed.resolution, 'votos');
++  const late = await device('teléfono tardío').vote(a.id);
++  assert.equal(late.status, 409, 'no se aceptan votos tras el cierre');
++  log(`cierre automático: ganó «${closed.winner.title}» (${closed.resolution}); voto tardío → 409`);
++
++  // Termina la canción → suena la ganadora
++  scr.socket.emit('songEnded', { playId: first.playId });
++  const second = await scr.until(() => scr.commands.find(c => c.type === 'play' && c.playId !== first.playId), 'reproducción de la ganadora');
++  assert.equal(second.streamRef, byId[a.id].stream_ref);
++  log(`reproduce la ganadora: ${second.streamRef}`);
++
++  // Cambio de contexto: evento de exámenes simulado → solo instrumental
++  const round2 = await scr.until(() => scr.state?.round?.status === 'open' && scr.state.round.id !== round1.id && scr.state.round, 'ronda 2');
++  await admin('/settings', 'PUT', { context_override: { temp: 26, event_type: 'exam' } });
++  await admin('/control/reroll', 'POST');
++  const round3 = await scr.until(() => scr.state?.round?.status === 'open' && scr.state.round.id !== round2.id && scr.state.round, 'ronda regenerada');
++  for (const c of round3.candidates) assert.equal(byId[c.id].genre, 'instrumental');
++  assert.equal(scr.state.ruleName, 'Exámenes');
++  log(`contexto cambiado a exámenes: ${round2.candidates.map(c => c.title).join(' vs ')} → ${round3.candidates.map(c => c.title).join(' vs ')}`);
++
++  // Ronda sin votos → regla configurada (lista de respaldo)
++  const noVotes = await scr.until(() => scr.state?.round?.id === round3.id && scr.state.round.status === 'closed' && scr.state.round, 'cierre sin votos');
++  assert.equal(noVotes.resolution, 'sin votos: respaldo');
++  log(`ronda sin votos → «${noVotes.winner.title}» (${noVotes.resolution})`);
++
++  // Anuncio autorizado entre canciones (audio insertado directamente: en
++  // producción lo genera Google TTS con «Generar voz»)
++  const ann = await admin('/announcements', 'POST', { text: 'Recuerda votar por la siguiente canción', every_n_songs: 1 });
++  await db.query("UPDATE announcements SET audio = $1, audio_mime = 'audio/mpeg' WHERE id = $2", [Buffer.from('ID3-prueba'), ann.id]);
++  await admin(`/announcements/${ann.id}/approve`, 'POST');
++  const expired = await admin('/announcements', 'POST', { text: 'Anuncio vencido', every_n_songs: 1, valid_to: '2020-01-01T00:00:00Z' });
++  await db.query("UPDATE announcements SET audio = $1, audio_mime = 'audio/mpeg', status = 'approved' WHERE id = $2", [Buffer.from('x'), expired.id]);
++  scr.socket.emit('songEnded', { playId: second.playId });
++  const annCmd = await scr.until(() => scr.commands.find(c => c.type === 'announcement'), 'comando de anuncio');
++  assert.equal(annCmd.id, ann.id, 'se reproduce el anuncio vigente, no el vencido');
++  const audio = await fetch(`${BASE}${annCmd.url}`);
++  assert.equal(audio.headers.get('content-type'), 'audio/mpeg');
++  scr.socket.emit('announcementEnded', { id: ann.id });
++  const third = await scr.until(() => scr.commands.at(-1).type === 'play' && scr.commands.at(-1).playId !== second.playId && scr.commands.at(-1), 'música tras el anuncio');
++  assert.equal(third.streamRef, byId[noVotes.winner.id].stream_ref, 'tras el anuncio suena la ganadora, sin superponerse');
++  log(`anuncio #${ann.id} entre canciones; luego suena «${noVotes.winner.title}»`);
++
++  // Persistencia: reiniciar el servidor conserva ajustes y datos
++  const before = await admin('/settings');
++  const stats = await admin('/stats');
++  await stopServer();
++  await startServer();
++  assert.deepEqual(await admin('/settings'), before);
++  assert.equal((await admin('/songs')).length, songs.length);
++  assert.ok((await admin('/stats')).summary.rounds >= stats.summary.rounds);
++  log(`tras reiniciar: ajustes iguales, ${songs.length} canciones, ${stats.summary.rounds} rondas cerradas en historial`);
++
++  // Respaldo y restauración
++  const backup = await admin('/backup');
++  await db.query('UPDATE context_rules SET priority = 0');
++  await admin('/restore', 'POST', backup);
++  const rules = await admin('/context_rules');
++  assert.equal(rules.find(r => r.name === 'Exámenes').priority, 10);
++  log(`respaldo exportado (${backup.songs.length} canciones, ${backup.context_rules.length} reglas) y restaurado`);
++
++  const health = await (await fetch(`${BASE}/api/health`)).json();
++  assert.equal(health.ok, true);
++});
+-- 
+2.43.0
+

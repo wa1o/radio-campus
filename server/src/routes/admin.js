@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { query } from '../db.js';
 import { requireAdmin } from '../auth.js';
 import { getSettings, saveSettings } from '../settings.js';
-import { synthesize } from '../tts.js';
 import { importYouTubePlaylist } from '../youtube.js';
 import { exportBackup, importBackup } from '../backup.js';
 
@@ -92,7 +91,7 @@ export default function adminRoutes(director) {
     res.sendStatus(204);
   }));
 
-  const ANN = 'id, text, status, valid_from, valid_to, hour_from, hour_to, every_n_songs, last_played_at, created_at, audio IS NOT NULL AS has_audio';
+  const ANN = 'id, text, status, valid_from, valid_to, hour_from, hour_to, every_n_songs, last_played_at, created_at';
   const annValues = b => [
     b?.text || null, b?.valid_from || null, b?.valid_to || null,
     b?.hour_from || null, b?.hour_to || null, Number(b?.every_n_songs) || 3,
@@ -126,26 +125,9 @@ export default function adminRoutes(director) {
     infoChanged();
     res.sendStatus(204);
   }));
-  r.post('/announcements/:id/tts', wrap(async (req, res) => {
-    const { rows } = await query('SELECT text FROM announcements WHERE id = $1', [req.params.id]);
-    if (!rows[0]) return res.sendStatus(404);
-    let out;
-    try {
-      out = await synthesize(rows[0].text);
-    } catch (err) {
-      return res.status(502).json({ error: `No se pudo generar la voz: ${err.message}` });
-    }
-    await query('UPDATE announcements SET audio = $1, audio_mime = $2 WHERE id = $3', [out.audio, out.mime, req.params.id]);
-    res.json({ ok: true });
-  }));
-  r.get('/announcements/:id/audio', wrap(async (req, res) => {
-    const { rows } = await query('SELECT audio, audio_mime FROM announcements WHERE id = $1 AND audio IS NOT NULL', [req.params.id]);
-    if (!rows[0]) return res.sendStatus(404);
-    res.type(rows[0].audio_mime).send(rows[0].audio);
-  }));
   r.post('/announcements/:id/approve', wrap(async (req, res) => {
-    const { rowCount } = await query("UPDATE announcements SET status = 'approved' WHERE id = $1 AND audio IS NOT NULL", [req.params.id]);
-    if (!rowCount) return res.status(400).json({ error: 'Genera y revisa la voz antes de aprobar' });
+    const { rowCount } = await query("UPDATE announcements SET status = 'approved' WHERE id = $1", [req.params.id]);
+    if (!rowCount) return res.sendStatus(404);
     infoChanged();
     res.json({ ok: true });
   }));

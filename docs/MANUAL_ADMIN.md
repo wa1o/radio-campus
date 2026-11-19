@@ -21,7 +21,7 @@ Cada canción necesita título, artista, proveedor y referencia:
 
 Etiquetas que usa el algoritmo: **género**, **energía** (baja/media/alta), **ambiente** (p. ej. alegre, tranquilo, fresco), **temáticas** (p. ej. navidad, día-del-estudiante) y **restricciones** (p. ej. `explicit`). Usa siempre las mismas palabras, en minúsculas, porque las reglas comparan texto exacto.
 
-**Traer playlist de YouTube**: pega el enlace de una playlist pública; se importan hasta 500 videos sin etiquetas y se crea una lista con ellos. Después edita cada canción para etiquetarla. Desactiva (no borres) las canciones que ya no quieras ofrecer; las que tienen historial no se pueden eliminar.
+**Traer playlist de YouTube**: pega el enlace de una playlist pública; se importan hasta 500 videos y se crea automáticamente una lista con ellos. Los videos que YouTube marca como restringidos por edad reciben la restricción `explicit`; con el ajuste predeterminado quedan fuera de las rondas, incluida la lista de respaldo. Esa marca es una señal aproximada, no una detección de letras, así que revisa las etiquetas en el catálogo. Después edita cada canción para agregar las demás etiquetas. Desactiva (no borres) las canciones que ya no quieras ofrecer; las que tienen historial no se pueden eliminar.
 
 ## Listas
 
@@ -55,9 +55,8 @@ Registra festividades (tipo *Festividad*), periodos de exámenes (*Exámenes*) y
 ## Anuncios
 
 1. **Crear**: escribe el texto (claro y breve; se lee en voz alta), la vigencia (desde/hasta), el horario del día en que puede sonar y la frecuencia (cada *N* canciones).
-2. **Generar voz**: crea el audio con Google Text-to-Speech.
-3. **Escuchar**: revisa la vista previa.
-4. **Aprobar**: solo los anuncios aprobados y con voz se reproducen y se muestran en la pantalla.
+2. **Probar voz**: escucha el texto con la voz española disponible en el dispositivo del administrador.
+3. **Aprobar**: la pantalla lee en voz alta los anuncios aprobados con su propia voz de navegador/dispositivo. La voz puede variar entre dispositivos; no se usa una API TTS de pago.
 
 Si editas el texto, el audio se borra y el anuncio vuelve a borrador para que lo revises de nuevo. Los anuncios vencidos o fuera de horario no suenan. **Retirar** lo devuelve a borrador.
 
@@ -71,7 +70,8 @@ Rondas cerradas, rondas sin votos, total y promedio de votos, historial de las �
 - **Desempate**: aleatorio, la menos reproducida o la primera opción.
 - **Ronda sin votos**: aleatoria entre las dos o una canción de la lista de respaldo.
 - **Evitar repetir** las últimas *N* canciones.
-- **Restricciones excluidas**: etiquetas que nunca se ofrecen (p. ej. `explicit`).
+- **Restricciones excluidas**: etiquetas que nunca se ofrecen (p. ej. `explicit`). También se respetan al escoger canciones de la lista de respaldo.
+- **Lista para rotación automática**: opcionalmente limita las opciones de votación a una lista; después de cada canción ganadora se abre automáticamente la siguiente ronda. Si se deja vacía, se usa todo el catálogo.
 - **Lista de respaldo**.
 - **Simulación de contexto**: fija hora, temperatura o evento para demostraciones. Déjala vacía en operación normal.
 - **Respaldo de configuración**: *Descargar respaldo* (JSON) y *Restaurar desde archivo*.

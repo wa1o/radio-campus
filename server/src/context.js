@@ -92,16 +92,22 @@ function shuffle(list) {
 }
 
 export async function fallbackSongs(settings, blocked = new Set()) {
-  if (!settings.fallback_playlist_id) return [];
+  const playlistId = settings.source_playlist_id || settings.fallback_playlist_id;
+  if (!playlistId) return [];
   const { rows } = await query(
     'SELECT s.* FROM songs s JOIN playlist_songs ps ON ps.song_id = s.id WHERE ps.playlist_id = $1 AND s.active',
-    [settings.fallback_playlist_id],
+    [playlistId],
   );
-  const fresh = rows.filter(r => !blocked.has(r.id));
-  return fresh.length >= 2 ? fresh : rows;
+  const eligible = filterExcludedRestrictions(rows, settings.excluded_restrictions);
+  const fresh = eligible.filter(song => !blocked.has(song.id));
+  return fresh.length >= 2 ? fresh : eligible;
 }
 
 const FILTER_KEYS = ['genres', 'energy', 'moods', 'themes'];
+
+export function filterExcludedRestrictions(songs, excluded = []) {
+  return songs.filter(song => !song.restrictions?.some(restriction => excluded.includes(restriction)));
+}
 
 // Combina las reglas que coinciden con el contexto. Para cada tipo de filtro
 // (géneros, energía, ambiente, temática) manda la regla de mayor prioridad que
@@ -144,8 +150,14 @@ export async function pickCandidates(excludeIds = []) {
   const blocked = new Set([...recent.map(r => r.song_id), ...excludeIds]);
 
   const { rows: songs } = await query(
-    'SELECT * FROM songs WHERE active AND NOT (restrictions && $1::text[])',
-    [settings.excluded_restrictions],
+    `SELECT s.* FROM songs s
+     WHERE s.active
+       AND NOT (s.restrictions && $1::text[])
+       AND ($2::int IS NULL OR EXISTS (
+         SELECT 1 FROM playlist_songs ps
+         WHERE ps.song_id = s.id AND ps.playlist_id = $2
+       ))`,
+    [settings.excluded_restrictions, settings.source_playlist_id],
   );
 
   let pool = [];

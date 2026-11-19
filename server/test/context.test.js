@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { combineRules, selectPool, ruleMatches, inTimeRange, passesFilters } from '../src/context.js';
+import { combineRules, selectPool, ruleMatches, inTimeRange, passesFilters, filterExcludedRestrictions } from '../src/context.js';
 
 const song = (id, genre, energy, mood, themes = []) => ({ id, genre, energy, mood, themes });
 const catalog = [
@@ -67,4 +67,13 @@ test('si ni la regla principal deja dos opciones, no hay candidatas (se usará e
 
 test('sin reglas que coincidan se usa todo el catálogo', () => {
   assert.equal(selectPool(catalog, []).pool.length, catalog.length);
+});
+
+test('el filtro de restricciones excluye canciones explícitas también de listas de respaldo', () => {
+  const songs = [
+    { id: 1, restrictions: [] },
+    { id: 2, restrictions: ['explicit'] },
+    { id: 3, restrictions: ['instrumental'] },
+  ];
+  assert.deepEqual(filterExcludedRestrictions(songs, ['explicit']).map(s => s.id), [1, 3]);
 });

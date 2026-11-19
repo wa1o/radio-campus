@@ -192,18 +192,15 @@ test('ronda completa con varios dispositivos, contexto, anuncios y persistencia'
   assert.equal(noVotes.resolution, 'sin votos: respaldo');
   log(`ronda sin votos → «${noVotes.winner.title}» (${noVotes.resolution})`);
 
-  // Anuncio autorizado entre canciones (audio insertado directamente: en
-  // producción lo genera Google TTS con «Generar voz»)
+  // Anuncio autorizado entre canciones (la pantalla usa la voz del navegador)
   const ann = await admin('/announcements', 'POST', { text: 'Recuerda votar por la siguiente canción', every_n_songs: 1 });
-  await db.query("UPDATE announcements SET audio = $1, audio_mime = 'audio/mpeg' WHERE id = $2", [Buffer.from('ID3-prueba'), ann.id]);
   await admin(`/announcements/${ann.id}/approve`, 'POST');
   const expired = await admin('/announcements', 'POST', { text: 'Anuncio vencido', every_n_songs: 1, valid_to: '2020-01-01T00:00:00Z' });
-  await db.query("UPDATE announcements SET audio = $1, audio_mime = 'audio/mpeg', status = 'approved' WHERE id = $2", [Buffer.from('x'), expired.id]);
+  await db.query("UPDATE announcements SET status = 'approved' WHERE id = $1", [expired.id]);
   scr.socket.emit('songEnded', { playId: second.playId });
   const annCmd = await scr.until(() => scr.commands.find(c => c.type === 'announcement'), 'comando de anuncio');
   assert.equal(annCmd.id, ann.id, 'se reproduce el anuncio vigente, no el vencido');
-  const audio = await fetch(`${BASE}${annCmd.url}`);
-  assert.equal(audio.headers.get('content-type'), 'audio/mpeg');
+  assert.equal(annCmd.text, 'Recuerda votar por la siguiente canción');
   scr.socket.emit('announcementEnded', { id: ann.id });
   const third = await scr.until(() => scr.commands.at(-1).type === 'play' && scr.commands.at(-1).playId !== second.playId && scr.commands.at(-1), 'música tras el anuncio');
   assert.equal(third.streamRef, byId[noVotes.winner.id].stream_ref, 'tras el anuncio suena la ganadora, sin superponerse');

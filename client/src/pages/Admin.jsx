@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, Route, Routes } from 'react-router-dom';
 import { api } from '../api.js';
 import { useStation, ConnectionBadge } from '../socket.jsx';
+import { speak } from '../speech.js';
 
 const ENERGY = [['', '—'], ['low', 'Baja'], ['medium', 'Media'], ['high', 'Alta']];
 const EVENT_TYPES = [['exam', 'Exámenes'], ['holiday', 'Festividad'], ['event', 'Evento']];
@@ -197,7 +198,7 @@ function PlaylistImporter({ onImported }) {
       <div className="import-heading">
         <span className="eyebrow">Importación rápida</span>
         <h2>Traer playlist de YouTube</h2>
-        <p>Agrega automáticamente el título, el canal y el video a tu catálogo. La API de YouTube no proporciona de forma fiable género ni ambiente.</p>
+        <p>La playlist se agrega automáticamente a Listas. YouTube marca algunas restricciones por edad como explícitas, pero esto no detecta todas las letras; revisa las etiquetas en el catálogo.</p>
       </div>
       <form className="import-form" onSubmit={importPlaylist}>
         <label htmlFor="playlist-url">Enlace de playlist pública</label>
@@ -217,7 +218,8 @@ function PlaylistImporter({ onImported }) {
       {result && (
         <p className="notice success" role="status" aria-live="polite">
           «{result.playlistName}»: {result.added} nuevas, {result.alreadyInCatalog} ya existentes y {result.skipped} omitidas.
-          {' '}Se creó la lista con {result.tracksInPlaylist} canciones.
+          {' '}Se creó y agregó a Listas con {result.tracksInPlaylist} canciones.
+          {result.explicitRestricted > 0 && ` ${result.explicitRestricted} restringidas por edad quedaron marcadas como explícitas para aplicar el filtro.`}
           {result.truncated && ' Se importaron como máximo las primeras 500 canciones.'}
           {' '}<NavLink to="/admin/playlists">Ver listas</NavLink>
         </p>
@@ -235,7 +237,8 @@ function Songs() {
         ['Título', s => s.title], ['Artista / canal', s => s.artist],
         ['Proveedor', s => s.provider === 'licensed_audio' ? 'Audio licenciado' : 'YouTube'],
         ['Género', s => s.genre ?? '—'], ['Energía', s => s.energy ?? '—'],
-        ['Ambiente', s => s.mood ?? '—'], ['Activa', s => (s.active ? 'Sí' : 'No')],
+        ['Ambiente', s => s.mood ?? '—'], ['Restricciones', s => s.restrictions?.join(', ') || '—'],
+        ['Activa', s => (s.active ? 'Sí' : 'No')],
       ]} />
     </>
   );
@@ -291,16 +294,10 @@ function announcementActions(row, run) {
   const post = path => run(() => api(`/admin/announcements/${row.id}/${path}`, { method: 'POST' }));
   return (
     <>
-      <button onClick={() => post('tts')}>Generar voz</button>
-      {row.has_audio && (
-        <button onClick={() => run(async () => {
-          const blob = await api(`/admin/announcements/${row.id}/audio`, { blob: true });
-          new Audio(URL.createObjectURL(blob)).play();
-        })}>Escuchar</button>
-      )}
+      <button onClick={() => run(() => speak(row.text))}>Probar voz</button>
       {row.status === 'approved'
         ? <button onClick={() => post('unapprove')}>Retirar</button>
-        : row.has_audio && <button onClick={() => post('approve')}>Aprobar</button>}
+        : <button onClick={() => post('approve')}>Aprobar</button>}
     </>
   );
 }
@@ -526,6 +523,7 @@ function Settings() {
           tie_break: s.tie_break,
           no_votes: s.no_votes,
           excluded_restrictions: s.excluded_restrictions.split(',').map(x => x.trim()).filter(Boolean),
+          source_playlist_id: s.source_playlist_id ? Number(s.source_playlist_id) : null,
           fallback_playlist_id: s.fallback_playlist_id ? Number(s.fallback_playlist_id) : null,
           context_override: s.sim_hhmm || s.sim_temp !== '' || s.sim_event
             ? { hhmm: s.sim_hhmm || null, temp: s.sim_temp === '' ? null : Number(s.sim_temp), event_type: s.sim_event || null }
@@ -557,7 +555,14 @@ function Settings() {
         </select>
       </label>
       <label>Evitar repetir las últimas N canciones<input type="number" min="0" value={s.recent_window} onChange={set('recent_window')} required /></label>
-      <label>Restricciones excluidas (separadas por coma)<input value={s.excluded_restrictions} onChange={set('excluded_restrictions')} /></label>
+      <label>Restricciones excluidas (separadas por coma, p. ej. explicit)<input value={s.excluded_restrictions} onChange={set('excluded_restrictions')} /></label>
+      <label>Lista para rotación automática (opcional)
+        <select value={s.source_playlist_id ?? ''} onChange={set('source_playlist_id')}>
+          <option value="">— catálogo completo —</option>
+          {playlists.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </label>
+      <p className="muted">Al elegir una lista, las opciones de cada votación saldrán de ella y la programación continuará automáticamente tras cada canción. Se respetan las restricciones excluidas.</p>
       <label>Lista de respaldo
         <select value={s.fallback_playlist_id ?? ''} onChange={set('fallback_playlist_id')}>
           <option value="">— ninguna —</option>
@@ -689,7 +694,7 @@ export default function Admin() {
         <Route path="announcements" element={
           <Crud resource="announcements" title="Anuncios" fields={announcementFields} actions={announcementActions} columns={[
             ['Texto', a => a.text], ['Estado', a => (a.status === 'approved' ? 'Aprobado' : 'Borrador')],
-            ['Voz', a => (a.has_audio ? 'Sí' : 'No')], ['Vigencia', a => `${fmt(a.valid_from)} → ${fmt(a.valid_to)}`],
+            ['Vigencia', a => `${fmt(a.valid_from)} → ${fmt(a.valid_to)}`],
             ['Frecuencia', a => `cada ${a.every_n_songs}`],
           ]} />
         } />

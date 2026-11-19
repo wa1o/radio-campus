@@ -40,10 +40,23 @@ export function normalizePlaylistItems(items) {
       title,
       artist: snippet.videoOwnerChannelTitle?.trim() || snippet.channelTitle?.trim() || 'Canal de YouTube',
       stream_ref: videoId,
+      restrictions: [],
       active: true,
     });
   }
   return tracks;
+}
+
+export function markAgeRestrictedTracks(tracks, videos) {
+  const restricted = new Set(
+    videos
+      .filter(video => video.contentDetails?.contentRating?.ytRating === 'ytAgeRestricted')
+      .map(video => video.id),
+  );
+  return tracks.map(track => ({
+    ...track,
+    restrictions: restricted.has(track.stream_ref) ? ['explicit'] : [],
+  }));
 }
 
 async function youtubeRequest(resource, params) {
@@ -109,28 +122,51 @@ export async function importYouTubePlaylist(playlistUrl) {
     pageToken = page.nextPageToken;
   } while (pageToken && rawItems.length < MAX_PLAYLIST_ITEMS);
 
-  const tracks = normalizePlaylistItems(rawItems.slice(0, MAX_PLAYLIST_ITEMS));
+  let tracks = normalizePlaylistItems(rawItems.slice(0, MAX_PLAYLIST_ITEMS));
   if (!tracks.length) throw httpError(422, 'La playlist no contiene videos importables');
+  const ratedVideos = [];
+  for (let i = 0; i < tracks.length; i += 50) {
+    const batch = tracks.slice(i, i + 50);
+    const ratings = await youtubeRequest('videos', {
+      part: 'contentDetails',
+      id: batch.map(track => track.stream_ref).join(','),
+    });
+    ratedVideos.push(...(ratings.items || []));
+  }
+  tracks = markAgeRestrictedTracks(tracks, ratedVideos);
   const truncated = rawItems.length > MAX_PLAYLIST_ITEMS || Boolean(pageToken);
   const references = tracks.map(track => track.stream_ref);
 
   const imported = await transaction(async client => {
     const existing = await client.query(
-      'SELECT id, stream_ref FROM songs WHERE provider = $1 AND stream_ref = ANY($2::text[])',
+      'SELECT id, stream_ref, restrictions FROM songs WHERE provider = $1 AND stream_ref = ANY($2::text[])',
       ['youtube', references],
     );
     const idsByRef = new Map(existing.rows.map(row => [row.stream_ref, row.id]));
     const newTracks = tracks.filter(track => !idsByRef.has(track.stream_ref));
+    const restrictedRefs = tracks
+      .filter(track => track.restrictions.includes('explicit'))
+      .map(track => track.stream_ref);
+
+    if (restrictedRefs.length) {
+      await client.query(
+        `UPDATE songs
+         SET restrictions = array_append(restrictions, 'explicit')
+         WHERE provider = 'youtube' AND stream_ref = ANY($1::text[])
+           AND NOT ('explicit' = ANY(restrictions))`,
+        [restrictedRefs],
+      );
+    }
 
     if (newTracks.length) {
       const values = [];
       const placeholders = newTracks.map((track, index) => {
-        const base = index * 5;
-        values.push(track.provider, track.title, track.artist, track.stream_ref, track.active);
-        return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`;
+        const base = index * 6;
+        values.push(track.provider, track.title, track.artist, track.stream_ref, track.restrictions, track.active);
+        return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6})`;
       });
       const inserted = await client.query(
-        `INSERT INTO songs (provider, title, artist, stream_ref, active) VALUES ${placeholders.join(', ')} RETURNING id, stream_ref`,
+        `INSERT INTO songs (provider, title, artist, stream_ref, restrictions, active) VALUES ${placeholders.join(', ')} RETURNING id, stream_ref`,
         values,
       );
       for (const row of inserted.rows) idsByRef.set(row.stream_ref, row.id);
@@ -151,6 +187,7 @@ export async function importYouTubePlaylist(playlistUrl) {
       added: newTracks.length,
       alreadyInCatalog: existing.rows.length,
       tracksInPlaylist: tracks.length,
+      explicitRestricted: restrictedRefs.length,
     };
   });
 
