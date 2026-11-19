@@ -45,6 +45,7 @@ function ScreenLive({ screenKey }) {
   const audio = useRef(new Audio());
   const cmd = useRef(null);
   const speechUtterance = useRef(null);
+  const speechGuard = useRef(null);
   const audioUnlockedRef = useRef(false);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
@@ -88,12 +89,31 @@ function ScreenLive({ screenKey }) {
     setSoundUnlocked(true);
   }
 
+  function stopSpeech() {
+    if (speechUtterance.current) speechUtterance.current.cancelled = true;
+    clearTimeout(speechGuard.current);
+    window.speechSynthesis?.cancel();
+    speechUtterance.current = null;
+  }
+
   function startAnnouncement(c) {
+    // Respaldo por si el navegador nunca avisa que terminó de hablar.
+    clearTimeout(speechGuard.current);
+    const words = String(c.text).split(/\s+/).length;
+    speechGuard.current = setTimeout(() => {
+      if (cmd.current?.type === 'announcement' && cmd.current.id === c.id && !cmd.current.paused) {
+        stopSpeech();
+        emit('announcementEnded', { id: c.id });
+      }
+    }, (words / 2 + 8) * 1000 / Math.max(0.7, c.rate || 1));
     try {
       speechUtterance.current = speak(c.text, {
+        voice: c.voice,
+        rate: c.rate,
         onEnd: () => {
           if (cmd.current?.type === 'announcement' && cmd.current.id === c.id) {
             speechUtterance.current = null;
+            clearTimeout(speechGuard.current);
             emit('announcementEnded', { id: c.id });
           }
         },
@@ -114,8 +134,7 @@ function ScreenLive({ screenKey }) {
     if (!c) return;
     switch (c.type) {
       case 'play':
-        window.speechSynthesis?.cancel();
-        speechUtterance.current = null;
+        stopSpeech();
         setPlaybackMessage(null);
         a.pause();
         if (c.provider === 'licensed_audio') {
@@ -140,8 +159,7 @@ function ScreenLive({ screenKey }) {
         a.pause();
         a.removeAttribute('src');
         a.load();
-        window.speechSynthesis?.cancel();
-        speechUtterance.current = null;
+        stopSpeech();
         if (!c.paused) startAnnouncement(c);
         break;
       case 'pause':
@@ -164,8 +182,7 @@ function ScreenLive({ screenKey }) {
         a.pause();
         a.removeAttribute('src');
         a.load();
-        window.speechSynthesis?.cancel();
-        speechUtterance.current = null;
+        stopSpeech();
     }
   }
 
@@ -236,7 +253,7 @@ function ScreenLive({ screenKey }) {
       socket.off('command', onCommand);
       socket.off('authError', setAuthError);
       a.pause();
-      window.speechSynthesis?.cancel();
+      stopSpeech();
       player.current?.destroy?.();
     };
   }, []);
@@ -270,68 +287,100 @@ function ScreenLive({ screenKey }) {
   const total = round ? Object.values(round.counts).reduce((x, y) => x + y, 0) : 0;
   const progress = position.duration ? Math.min(100, (position.current / position.duration) * 100) : 0;
   const voteUrl = `${window.location.origin}/vote`;
+  const now = state?.nowPlaying;
+  const speaking = state?.phase === 'announcement' ? state.announcement : null;
+  const [a, b] = round?.candidates ?? [];
+  const pctA = total ? Math.round(((round.counts[a.id] ?? 0) * 100) / total) : 50;
+  // Cada lado conserva un mínimo visible para que sus datos no se recorten.
+  const barA = Math.min(82, Math.max(18, pctA));
+  const votesLabel = n => `${n} ${n === 1 ? 'voto' : 'votos'}`;
 
   return (
     <div className="screen">
       <header className="screen-now">
-        <div className="now-playing">
-          {state?.nowPlaying?.thumbnailUrl && (
-            <img className="now-playing-thumbnail" src={state.nowPlaying.thumbnailUrl} alt={`Miniatura de ${state.nowPlaying.title}`} />
-          )}
-          <div>
-            <span className="label">Sonando ahora</span>
-            <h1>{state?.nowPlaying?.title ?? 'En espera'}</h1>
-            <h2>{state?.nowPlaying?.artist ?? ''}</h2>
+        {now?.thumbnailUrl
+          ? <img className="cover" src={now.thumbnailUrl} alt="" />
+          : <div className="cover cover-empty" aria-hidden="true" />}
+        <div className="now-text">
+          <p className="on-air">
+            <span className={`on-air-dot ${state?.phase === 'playing' && !state?.paused ? 'live' : ''}`} />
+            {speaking ? (speaking.kind === 'dj' ? 'Habla el locutor' : 'Aviso del campus') : state?.paused ? 'En pausa' : now ? 'Sonando ahora' : 'En espera'}
+          </p>
+          <h1>{now?.title ?? 'Radio del campus'}</h1>
+          <h2>{now?.artist ?? 'La música la eliges tú'}</h2>
+          {now && (
             <div className="track-progress" aria-label="Progreso de la canción">
               <div className="track-progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(progress)}>
                 <div style={{ width: `${progress}%` }} />
               </div>
-              <div className="track-progress-time">
-                <span>{formatTime(position.current)}</span>
-                <span>{position.duration ? formatTime(position.duration) : '--:--'}</span>
-              </div>
+              <span>{formatTime(position.current)}</span>
+              <span>{position.duration ? formatTime(position.duration) : '--:--'}</span>
             </div>
-          </div>
+          )}
         </div>
-        <ConnectionBadge connected={connected} />
+        <div className="screen-status">
+          <ConnectionBadge connected={connected} />
+          {state?.context?.temp != null && <span className="weather">{Math.round(state.context.temp)} °C</span>}
+        </div>
       </header>
+
+      {speaking && (
+        <div className={`caption ${speaking.kind === 'dj' ? 'dj' : ''}`} role="status" aria-live="polite">
+          <span className="caption-who">{speaking.kind === 'dj' ? 'Locutor' : 'Aviso'}</span>
+          <p>{speaking.text}</p>
+        </div>
+      )}
+      {(playbackMessage || state?.lastError) && (
+        <div className="screen-error" role="status">{playbackMessage || state.lastError}</div>
+      )}
 
       <main className="screen-main">
         <section className="screen-round">
-          {(playbackMessage || state?.lastError) && (
-            <div className="screen-error" role="status">{playbackMessage || state.lastError}</div>
-          )}
-          {state?.phase === 'announcement' && <div className="banner">Aviso: {state.announcement?.text}</div>}
-          {state?.paused && <div className="banner">Programación en pausa</div>}
           {round ? (
             <>
-              <div className="label">{round.status === 'open' ? 'Vota por la siguiente canción' : 'Resultado de la ronda'}</div>
-              <div className="candidates">
-                {round.candidates.map(c => {
-                  const n = round.counts[c.id] ?? 0;
-                  const pct = total ? Math.round((n * 100) / total) : 0;
-                  return (
-                    <div key={c.id} className={`candidate ${round.winner?.id === c.id ? 'winner' : ''}`}>
+              <div className="round-head">
+                <h3>{round.status === 'open' ? '¿Qué suena después?' : 'Ya decidieron'}</h3>
+                {round.status === 'open' && (
+                  <div className={`countdown ${secs <= 10 ? 'ending' : ''}`}>
+                    <strong>{state.paused ? '⏸' : secs}</strong>
+                    <span>{state.paused ? 'en pausa' : 'segundos para votar'}</span>
+                  </div>
+                )}
+              </div>
+              <div className="duel">
+                {[a, b].map((c, i) => (
+                  <div key={c.id} className={`contender ${i ? 'right' : 'left'} ${round.winner?.id === c.id ? 'winner' : ''} ${round.winner && round.winner.id !== c.id ? 'loser' : ''}`}>
+                    {c.thumbnailUrl && <img src={c.thumbnailUrl} alt="" />}
+                    <div>
                       <strong>{c.title}</strong>
                       <span>{c.artist}</span>
-                      <div className="bar"><div style={{ width: `${pct}%` }} /></div>
-                      <span className="count">{n} votos · {pct}%</span>
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
-              {round.status === 'open'
-                ? <div className="timer">{secs}s</div>
-                : <div className="result">Siguiente: <strong>{round.winner?.title}</strong> ({round.resolution})</div>}
+              <div className="duel-bar" aria-label={`${a.title}: ${round.counts[a.id] ?? 0} votos; ${b.title}: ${round.counts[b.id] ?? 0} votos`}>
+                <div className="side-a" style={{ flexBasis: `${barA}%` }}>
+                  <b>{total ? `${pctA}%` : ''}</b><small>{votesLabel(round.counts[a.id] ?? 0)}</small>
+                </div>
+                <div className="side-b" style={{ flexBasis: `${100 - barA}%` }}>
+                  <small>{votesLabel(round.counts[b.id] ?? 0)}</small><b>{total ? `${100 - pctA}%` : ''}</b>
+                </div>
+              </div>
+              {round.status === 'closed' && round.winner && (
+                <p className="result">Sigue <strong>{round.winner.title}</strong>, de {round.winner.artist}<span> · {round.resolution}</span></p>
+              )}
+              {round.status === 'open' && !total && <p className="hint">Nadie ha votado todavía. ¡Sé el primero!</p>}
             </>
           ) : (
-            <p className="muted">Preparando la siguiente ronda…</p>
+            <p className="hint">Preparando las siguientes opciones…</p>
           )}
         </section>
 
         <aside className="screen-side">
-          <QRCodeSVG value={voteUrl} size={220} includeMargin />
-          <p className="muted">{voteUrl.replace(/^https?:\/\//, '')}</p>
+          <div className="ticket">
+            <QRCodeSVG value={voteUrl} size={240} marginSize={0} bgColor="#ffffff" fgColor="#1c1310" />
+            <p><strong>Escanea y vota</strong>{voteUrl.replace(/^https?:\/\//, '')}</p>
+          </div>
           <div ref={ytBox} className="yt-box" />
           {state?.phase === 'playing' && !audioUnlocked && (
             <button className="screen-audio-button" disabled={state.nowPlaying?.provider !== 'licensed_audio' && !playerReady} onClick={activateAudio}>
@@ -339,14 +388,20 @@ function ScreenLive({ screenKey }) {
             </button>
           )}
           {state?.nowPlaying?.provider === 'licensed_audio' && <p className="player-source">Audio licenciado</p>}
-          <h3>Próximos eventos</h3>
-          <ul>
-            {state?.info.events.map(e => <li key={`${e.name}-${e.starts_at}`}>{e.name} · {fmtDate(e.starts_at)}</li>)}
-          </ul>
-          <h3>Avisos</h3>
-          <ul>
-            {state?.info.notices.map(n => <li key={n}>{n}</li>)}
-          </ul>
+          {!!state?.info.events.length && (
+            <section className="board">
+              <h4>Próximos eventos</h4>
+              <ul>
+                {state.info.events.map(e => <li key={`${e.name}-${e.starts_at}`}><span>{e.name}</span><time>{fmtDate(e.starts_at)}</time></li>)}
+              </ul>
+            </section>
+          )}
+          {!!state?.info.notices.length && (
+            <section className="board">
+              <h4>Avisos</h4>
+              <ul>{state.info.notices.map(n => <li key={n}>{n}</li>)}</ul>
+            </section>
+          )}
         </aside>
       </main>
     </div>

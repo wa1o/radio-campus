@@ -36,41 +36,60 @@ export default function Vote() {
     }
   }
 
+  const now = state?.nowPlaying;
+  const fraction = round?.durationMs ? Math.max(0, Math.min(1, (secs * 1000) / round.durationMs)) : 0;
+
   return (
     <div className="vote">
-      <header className="row">
-        <h1>Radio del campus</h1>
-        <ConnectionBadge connected={connected} />
+      <header className="vote-head">
+        <div className="brand">
+          <span className={`on-air-dot ${connected ? 'live' : ''}`} />
+          <h1>Radio del campus</h1>
+        </div>
+        {!connected && <ConnectionBadge connected={connected} />}
       </header>
+
       {!state ? (
-        <p>Conectando…</p>
+        <p className="hint">Conectando con la radio…</p>
       ) : (
         <>
-          <p className="muted">
-            Sonando: {state.nowPlaying ? `${state.nowPlaying.title} — ${state.nowPlaying.artist}` : '—'}
-          </p>
-          {!round && <p>No hay una votación activa en este momento.</p>}
+          <section className="now-mini" aria-label="Sonando ahora">
+            {now?.thumbnailUrl && <img src={now.thumbnailUrl} alt="" />}
+            <div>
+              <span>{state.phase === 'announcement' ? (state.announcement?.kind === 'dj' ? 'Habla el locutor' : 'Aviso') : 'Sonando ahora'}</span>
+              <strong>{now ? now.title : 'En espera'}</strong>
+              {now && <small>{now.artist}</small>}
+            </div>
+          </section>
+
+          {!round && <p className="hint">No hay una votación abierta ahora. Vuelve en cuanto empiece la siguiente canción.</p>}
           {round && (
-            <>
-              <p className="timer-small">
-                {open ? `Quedan ${secs} s` : state.paused ? 'Votación en pausa' : 'Ronda cerrada'}
-              </p>
+            <section className="ballot">
+              <div className="ballot-head">
+                <h2>{open ? (voted ? 'Tu voto ya cuenta' : '¿Qué suena después?') : round.status === 'closed' ? 'Votación cerrada' : 'Votación en pausa'}</h2>
+                {open && <span className="secs">{secs} s</span>}
+              </div>
+              {open && <div className="time-left" aria-hidden="true"><div style={{ transform: `scaleX(${fraction})` }} /></div>}
               {round.candidates.map(c => (
                 <button
                   key={c.id}
-                  className={`option ${voted?.id === c.id ? 'chosen' : ''}`}
+                  className={`option ${voted?.id === c.id ? 'chosen' : ''} ${round.winner?.id === c.id ? 'won' : ''}`}
                   disabled={!open || !!voted || sending}
                   onClick={() => vote(c.id)}
                 >
-                  <strong>{c.title}</strong>
-                  <span>{c.artist}</span>
+                  {c.thumbnailUrl && <img src={c.thumbnailUrl} alt="" />}
+                  <span className="option-text">
+                    <strong>{c.title}</strong>
+                    <span>{c.artist}</span>
+                  </span>
+                  {voted?.id === c.id && <span className="tick" aria-label="Tu voto">✓</span>}
                 </button>
               ))}
-              {voted && <p className="ok">¡Voto registrado por «{voted.title}»!</p>}
+              {voted && open && <p className="ok">Votaste por «{voted.title}». El resultado sale al terminar la cuenta.</p>}
               {round.status === 'closed' && round.winner && (
-                <p className="ok">Ganó: {round.winner.title} ({round.resolution})</p>
+                <p className="ok">Ganó «{round.winner.title}». Suena en cuanto termine esta canción.</p>
               )}
-            </>
+            </section>
           )}
           {error && <p className="error">{error}</p>}
         </>

@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Screen from './pages/Screen.jsx';
 import Vote from './pages/Vote.jsx';
 import Admin from './pages/Admin.jsx';
+import '@fontsource-variable/bricolage-grotesque';
+import '@fontsource-variable/manrope';
 import './styles.css';
 
 createRoot(document.getElementById('root')).render(
