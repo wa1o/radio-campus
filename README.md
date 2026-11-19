@@ -12,7 +12,7 @@ Radio inteligente e interactiva para el campus. La comunidad vota desde el telé
 
 - Node.js 18.11 o superior (probado con Node 22)
 - PostgreSQL 13 o superior
-- Opcional: clave de **YouTube Data API v3** (importar playlists)
+- Opcional: clave de **YouTube Data API v3** (buscar e importar playlists; sin ella se agregan canciones pegando enlaces) y de **Gemini** (locutor con IA, gratis en Google AI Studio)
 
 ## Instalación y ejecución local
 
@@ -75,6 +75,8 @@ radio-campus/
 │   │   ├── routes/         API pública y de administración
 │   │   ├── backup.js       Exportar / restaurar configuración
 │   │   ├── youtube.js      Importación de playlists
+│   │   ├── songtools.js    Enlaces, búsqueda, limpieza de títulos y etiquetas sugeridas
+│   │   ├── dj.js           Locutor automático (plantillas + Gemini opcional)
 │   │   └── schema.sql      Esquema de la base de datos
 │   └── test/               Pruebas unitarias y de integración
 ├── docs/                   Manuales y documentación técnica
@@ -85,6 +87,7 @@ radio-campus/
 ## Funciones simuladas o con limitaciones
 
 - **Simulación de contexto**: el panel permite fijar hora, temperatura o evento para demostraciones. Cuando está activa, el panel lo indica en rojo. Debe quedar vacía en operación normal.
-- **Voz de anuncios**: se usa la síntesis de voz disponible en el navegador de la pantalla; no se envía el texto a un servicio TTS del servidor. La disponibilidad y calidad dependen de las voces instaladas en el dispositivo.
+- **Voz del locutor y anuncios**: se usa la síntesis de voz del navegador de la pantalla (gratis). La calidad depende de las voces instaladas; en Windows, Microsoft Edge ofrece voces neuronales en español.
+- **Locutor con IA**: opcional con `GEMINI_API_KEY` (capa gratuita de Google). Sin clave, el locutor usa frases preparadas con los datos reales.
 - **Pruebas automáticas**: la pantalla se simula con un cliente Socket.IO; la reproducción real en YouTube y la voz del navegador se verifican manualmente (checklist en `docs/PRUEBAS.md`).
 - **Licencias musicales**: la reproducción pública en el campus requiere los permisos correspondientes; ver `docs/SERVICIOS_Y_COSTOS.md`.

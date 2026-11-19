@@ -9,7 +9,9 @@ Precios consultados en noviembre de 2026, en dólares estadounidenses. Verifica 
 | Render: servicio web Starter | Servidor Node.js, HTTPS, despliegue desde GitHub | Cuenta Render con tarjeta | US$7 |
 | Render: PostgreSQL Basic-256mb | Base de datos persistente | Misma cuenta | US$6 + almacenamiento (US$0.30/GB) |
 | YouTube IFrame Player | Reproducción de la música en la pantalla | Ninguna | US$0 |
-| YouTube Data API v3 | Importar playlists desde el panel | Clave de API en el mismo proyecto de Google Cloud | US$0 (cuota diaria gratuita) |
+| YouTube Data API v3 (opcional) | Buscar canciones, importar playlists y sugerir géneros | Clave de API en un proyecto de Google Cloud | US$0 (cuota diaria gratuita) |
+| Voz del navegador (Web Speech API) | Voz del locutor y de los anuncios | Ninguna | US$0 |
+| Google Gemini (opcional) | Redactar las intervenciones del locutor y sugerir etiquetas | Clave gratuita de Google AI Studio | US$0 en la capa gratuita |
 | Open-Meteo | Temperatura local | Ninguna (sin clave) | US$0 para uso no comercial |
 | GitHub | Repositorio | Cuenta gratuita | US$0 |
 | Dominio propio (opcional) | p. ej. `radio.iest.edu.mx` | DNS de la universidad | Según la institución |
@@ -24,10 +26,18 @@ Precios consultados en noviembre de 2026, en dólares estadounidenses. Verifica 
 - El servicio web gratuito se suspende tras 15 minutos sin tráfico y tarda en reactivarse, lo que desconectaría la pantalla. No usarlo en operación.
 - Limitación del sistema: debe correr **una sola instancia**; no activar escalado horizontal.
 
-### Voz de los anuncios
+### Voz del locutor y de los anuncios
 
-- Los anuncios usan la síntesis de voz integrada en el navegador de la pantalla, sin una API de pago ni una clave del servidor.
-- La voz en español disponible depende del sistema operativo y navegador de la pantalla; conviene probarla antes de operar.
+- El locutor y los anuncios usan la síntesis de voz integrada en el navegador de la pantalla, sin una API de pago ni una clave del servidor.
+- La voz depende del sistema y del navegador de la pantalla. En Windows, **Microsoft Edge** incluye voces neuronales en español gratuitas (p. ej. «Dalia» o «Jorge», de México), mucho más naturales que las voces locales; Chrome ofrece «Google español». Escribe parte del nombre de la voz en Ajustes → *Voz preferida*.
+- Sin conexión a internet, Edge y Chrome usan las voces locales del sistema.
+
+### Locutor con IA (Gemini, opcional)
+
+- Sin `GEMINI_API_KEY`, el locutor arma sus intervenciones con frases preparadas y los datos reales de la estación. No cuesta nada y no depende de servicios externos.
+- Con la clave, cada intervención la redacta Gemini a partir de esos mismos datos (canción anterior, ganadora y votos, temperatura, próximo evento). Si Gemini no responde en 6 segundos o rechaza la petición, se usa la plantilla y la radio no se detiene.
+- La clave se obtiene gratis en Google AI Studio sin tarjeta. Google fija los límites de la capa gratuita por proyecto y los ha cambiado varias veces en 2026; los vigentes se consultan en AI Studio. Con el locutor cada 2 canciones se hacen unas 15–20 peticiones por hora de transmisión.
+- En la capa gratuita, Google puede usar lo enviado para mejorar sus productos. El sistema solo envía nombres de canciones, temperatura y eventos públicos, nunca datos de estudiantes.
 
 ### YouTube
 

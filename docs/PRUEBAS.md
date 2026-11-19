@@ -10,7 +10,7 @@ TEST_DATABASE_URL=postgres://usuario:clave@localhost/radio_test npm run test:e2e
 
 ### Unitarias (`test/context.test.js`, `test/youtube.test.js`)
 
-11 pruebas, todas aprobadas. Cubren rangos horarios que cruzan medianoche, evaluación de condiciones, combinación de reglas por prioridad (la temperatura ajusta el ambiente dentro de la franja horaria), regla exclusiva de exámenes, selección temática por festividad, relajación de reglas, caso sin reglas e importación de playlists de YouTube.
+21 pruebas, todas aprobadas. Cubren rangos horarios que cruzan medianoche, evaluación de condiciones, combinación de reglas por prioridad (la temperatura ajusta el ambiente dentro de la franja horaria), regla exclusiva de exámenes, selección temática por festividad, relajación de reglas, caso sin reglas, importación de playlists, reconocimiento de enlaces de YouTube, limpieza de títulos, etiquetas sugeridas, plantillas del locutor y su paso a Gemini con respaldo si la IA falla.
 
 ### Integración: ronda completa (`test/e2e.test.js`)
 
@@ -18,14 +18,15 @@ Levanta el servidor real contra PostgreSQL 16, simula la pantalla del campus con
 
 - login de administrador OK; /api/admin sin token → 401
 - catálogo: 8 canciones, 2 reglas, lista de respaldo #1
-- ronda #1: Pop 1 vs Pop 3 (regla: Día energético)
-- votos: Pop 1=2, Pop 3=1; voto repetido → 409 «Ya votaste en esta ronda»
-- cierre automático: ganó «Pop 1» (votos); voto tardío → 409
-- reproduce la ganadora: https://audio.example.edu/Pop%201.mp3
-- contexto cambiado a exámenes: Pop 2 vs Rock 1 → Instrumental 3 vs Instrumental 1
-- ronda sin votos → «Rock 1» (sin votos: respaldo)
-- anuncio #1 entre canciones; luego suena «Rock 1»
-- tras reiniciar: ajustes iguales, 8 canciones, 2 rondas cerradas en historial
+- ronda #1: Rock 1 vs Pop 1 (regla: Día energético)
+- votos: Rock 1=2, Pop 1=1; voto repetido → 409 «Ya votaste en esta ronda»
+- cierre automático: ganó «Rock 1» (votos); voto tardío → 409
+- reproduce la ganadora: https://audio.example.edu/Rock%201.mp3
+- contexto cambiado a exámenes: Pop 1 vs Pop 2 → Instrumental 2 vs Instrumental 3
+- ronda sin votos → «Pop 2» (sin votos: respaldo)
+- anuncio #1 entre canciones; luego suena «Pop 2»
+- locutor: «Buenas tardes, campus. Esto es Radio Prueba. Eso fue Pop 2, de Artista de prueba. Con un voto, ustedes eligieron lo que sigue: Instrumental 3, de Artista de prueba. Estamos a 26 grados. Cuando empiece la canción se abre la votación: escanea el QR.»
+- tras reiniciar: ajustes iguales, 8 canciones, 3 rondas cerradas en historial
 - respaldo exportado (8 canciones, 2 reglas) y restaurado
 
 Qué comprueba cada paso:
@@ -39,6 +40,7 @@ Qué comprueba cada paso:
 | Un cambio de contexto cambia las opciones | Al activar un evento de exámenes, la ronda regenerada solo ofrece instrumental |
 | Rondas sin participación | Se resuelven con la lista de respaldo, según la regla configurada |
 | Anuncio autorizado entre canciones | Suena el anuncio vigente (no el vencido) y después la música, sin superponerse |
+| Locutor automático | Tras la canción, el locutor presenta a la ganadora e invita a votar; después suena la ganadora |
 | Ajustes persistentes al recargar | Tras reiniciar el servidor, los ajustes, el catálogo y el historial se conservan |
 | Respaldos | El respaldo JSON se exporta y restaura los valores modificados |
 | Seguridad | El panel sin token responde 401 |
@@ -58,5 +60,7 @@ Elementos que la prueba automática simula y deben verificarse a mano con la pan
 | 7 | Cambiar la duración de la ronda y recargar el panel | El valor se conserva | |
 | 8 | Desconectar la red de la pantalla 10 s y reconectar | Indicador «Sin conexión», reconexión automática y reproducción continúa | |
 | 9 | *Pausar* y *Reanudar* desde el panel | Música y temporizador se detienen y continúan | |
+| 10 | Ajustes → Locutor cada 1 canción → esperar el fin de una canción | Se oye al locutor presentar la ganadora con su rótulo en pantalla y luego suena la canción | |
+| 11 | Canciones → Pegar enlaces con 3 enlaces de YouTube | Se agregan con título, artista y etiquetas sugeridas | |
 
 Se recomienda grabar un video corto de los pasos 1 a 6 como evidencia de la demostración integrada.

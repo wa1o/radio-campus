@@ -21,6 +21,18 @@ Cada canción necesita título, artista, proveedor y referencia:
 
 Etiquetas que usa el algoritmo: **género**, **energía** (baja/media/alta), **ambiente** (p. ej. alegre, tranquilo, fresco), **temáticas** (p. ej. navidad, día-del-estudiante) y **restricciones** (p. ej. `explicit`). Usa siempre las mismas palabras, en minúsculas, porque las reglas comparan texto exacto.
 
+### Agregar canciones
+
+En **Canciones → Agregar canciones** hay tres formas; en todas se llenan solos el título (sin «Official Video», «Lyrics», etc.), el artista y unas etiquetas sugeridas:
+
+- **Pegar enlaces**: pega uno o muchos enlaces de YouTube, YouTube Music o Shorts (uno por línea). Funciona sin clave de YouTube. Los videos que no existen, son privados o cuyo dueño no permite reproducirlos fuera de YouTube se rechazan y se explica por qué.
+- **Buscar en YouTube**: escribe canción o artista y pulsa *Agregar* en los resultados (necesita `YOUTUBE_API_KEY`; cada búsqueda gasta 100 de las 10 000 unidades diarias gratuitas).
+- **Playlist completa**: ver abajo.
+
+Opcionalmente elige una lista para que las nuevas canciones también se agreguen a ella.
+
+Las etiquetas sugeridas salen de las categorías de YouTube (con clave), de palabras del título (cumbia, corrido, lofi, remix, acústico, navidad…) y, si el servidor tiene `GEMINI_API_KEY`, de la IA. **Completar etiquetas** llena género, energía y ambiente vacíos de todo el catálogo sin tocar lo que ya editaste. Son sugerencias: revísalas, sobre todo las restricciones.
+
 **Traer playlist de YouTube**: pega el enlace de una playlist pública; se importan hasta 500 videos y se crea automáticamente una lista con ellos. Los videos que YouTube marca como restringidos por edad reciben la restricción `explicit`; con el ajuste predeterminado quedan fuera de las rondas, incluida la lista de respaldo. Esa marca es una señal aproximada, no una detección de letras, así que revisa las etiquetas en el catálogo. Después edita cada canción para agregar las demás etiquetas. Desactiva (no borres) las canciones que ya no quieras ofrecer; las que tienen historial no se pueden eliminar.
 
 ## Listas
@@ -51,6 +63,17 @@ Si una combinación deja menos de dos canciones, el sistema descarta primero las
 ## Eventos
 
 Registra festividades (tipo *Festividad*), periodos de exámenes (*Exámenes*) y otros (*Evento*) con inicio y fin. Mientras un evento está vigente activa las reglas de su tipo. Los tres más próximos se muestran en la pantalla pública.
+
+## Locutor automático
+
+En **Ajustes → Locutor automático**:
+
+- **Activar locutor** y **Hablar cada N canciones**: entre canciones el locutor presenta lo que acaba de sonar y la ganadora con sus votos, menciona la temperatura y el próximo evento, e invita a votar con el QR. Sus palabras aparecen como rótulo en la pantalla.
+- **Redactar con IA**: si el servidor tiene `GEMINI_API_KEY`, Gemini escribe cada intervención con esos mismos datos; si no, o si la IA falla, se usan frases preparadas.
+- **Voz preferida** y **velocidad**: parte del nombre de la voz (p. ej. «Dalia» en Microsoft Edge). Si no se encuentra, se usa la mejor voz en español del navegador de la pantalla.
+- **Escuchar un ejemplo**: genera una intervención con el estado actual y la reproduce en tu navegador.
+
+Los anuncios programados tienen prioridad: si toca un anuncio, el locutor espera a la siguiente transición.
 
 ## Anuncios
 

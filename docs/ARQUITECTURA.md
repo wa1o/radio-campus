@@ -38,7 +38,11 @@ flowchart LR
   S -- "reproduce" --> YT
 ```
 
-La voz de los anuncios se sintetiza en el navegador de la pantalla con la voz española disponible en ese dispositivo; el servidor solo transmite el texto.
+La voz de los anuncios y del locutor se sintetiza en el navegador de la pantalla con la mejor voz española disponible; el servidor solo transmite el texto.
+
+### Locutor automático (`server/src/dj.js`)
+
+Cada *N* canciones, al terminar una canción y antes de la ganadora, el Director inserta una intervención del locutor (fase `announcement`, `kind: 'dj'`). El texto se prepara en cuanto cierra la ronda, para no dejar silencio: con `GEMINI_API_KEY` lo redacta Gemini a partir de datos reales (canción anterior, ganadora y votos, temperatura, próximo evento) con un límite de 6 s; sin clave o si falla, se arma con plantillas. La pantalla lo lee con la Web Speech API, lo muestra como rótulo inferior y avisa `announcementEnded`; si el navegador nunca avisa, un temporizador de respaldo continúa la programación.
 
 ## Flujo de una ronda
 

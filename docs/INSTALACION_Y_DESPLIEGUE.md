@@ -23,7 +23,8 @@ Edita `.env`:
 - `DATABASE_URL`: p. ej. `postgres://postgres:tu_clave@localhost:5432/radio_campus` (crea la base antes en pgAdmin o con `createdb`).
 - `JWT_SECRET` y `SCREEN_KEY`: cadenas largas y aleatorias, p. ej. `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
 - `ADMIN_EMAIL` / `ADMIN_PASSWORD`: primer administrador.
-- `YOUTUBE_API_KEY`: necesaria para importar playlists; la voz de anuncios usa el navegador y no requiere una API key.
+- `YOUTUBE_API_KEY` (opcional): búsqueda de canciones, playlists completas y mejores etiquetas. Sin ella se agregan canciones pegando enlaces.
+- `GEMINI_API_KEY` (opcional, gratis en https://aistudio.google.com/apikey): el locutor redacta con IA y «Completar etiquetas» pregunta a Gemini por las canciones sin género. Sin ella el locutor usa frases preparadas.
 
 ```bash
 npm run build
