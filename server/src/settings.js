@@ -9,6 +9,12 @@ export const DEFAULTS = {
   source_playlist_id: null,
   fallback_playlist_id: null,
   context_override: null,
+  dj_enabled: true,
+  dj_every_n_songs: 2,
+  dj_use_ai: true,
+  dj_station_name: 'Radio del campus',
+  dj_voice: '',
+  dj_rate: 1,
 };
 
 export async function getSettings() {

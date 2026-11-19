@@ -1,5 +1,6 @@
 import { query } from './db.js';
 import { getSettings } from './settings.js';
+import { writeDjLine } from './dj.js';
 import { pickCandidates, fallbackSongs, filterExcludedRestrictions, localClock, inTimeRange } from './context.js';
 
 const RETRY_MS = 30_000;
@@ -26,6 +27,8 @@ export class Director {
     this.remainingMs = null;
     this.forcedNext = null;
     this.announcement = null;
+    this.songsSinceDj = 0;
+    this.djDraft = null;
     this.screenOnline = false;
     this.ruleName = null;
     this.context = null;
@@ -65,6 +68,7 @@ export class Director {
         id: r.id,
         status: r.status,
         endsAt: r.endsAt,
+        durationMs: r.durationMs,
         remainingMs: this.paused ? this.remainingMs : null,
         candidates: r.candidates.map(pub),
         counts: r.counts,
@@ -105,7 +109,8 @@ export class Director {
       };
     }
     if (this.phase === 'announcement') {
-      return { type: 'announcement', id: this.announcement.id, text: this.announcement.text, paused: this.paused };
+      const a = this.announcement;
+      return { type: 'announcement', kind: a.kind || 'announcement', id: a.id, text: a.text, voice: a.voice || '', rate: a.rate || 1, paused: this.paused };
     }
     return { type: 'stop' };
   }
@@ -160,6 +165,7 @@ export class Director {
     const { rows } = await query('INSERT INTO plays (song_id, round_id, source) VALUES ($1, $2, $3) RETURNING id', [song.id, roundId, source]);
     this.playId = rows[0].id;
     this.nowPlaying = song;
+    this.songsSinceDj += 1;
     this.phase = 'playing';
     this.lastError = null;
     this.announcement = null;
@@ -186,6 +192,7 @@ export class Director {
       id: rows[0].id,
       candidates,
       endsAt: endsAt.getTime(),
+      durationMs: ms,
       status: 'open',
       counts: { [candidates[0].id]: 0, [candidates[1].id]: 0 },
       winner: null,
@@ -224,6 +231,8 @@ export class Director {
     );
     Object.assign(r, { status: 'closed', counts, winner: outcome.winner, resolution: outcome.resolution });
     this.remainingMs = null;
+    // Prepara con anticipación lo que dirá el locutor para no dejar silencio.
+    if (this.djDue(settings)) this.djDraft = writeDjLine(this, settings).catch(() => null);
     this.broadcast();
   }
 
@@ -264,7 +273,18 @@ export class Director {
     }
     const due = await this.dueAnnouncement();
     if (due) return this.playAnnouncement(due);
+    const settings = await getSettings();
+    if (this.djDue(settings)) {
+      const line = (await this.djDraft) || (await writeDjLine(this, settings));
+      this.djDraft = null;
+      return this.playAnnouncement({ id: `dj-${Date.now()}`, kind: 'dj', text: line.text, source: line.source });
+    }
+    this.djDraft = null;
     await this.playNext();
+  }
+
+  djDue(settings) {
+    return Boolean(settings.dj_enabled && this.nowPlaying && this.songsSinceDj >= Math.max(1, Number(settings.dj_every_n_songs) || 1));
   }
 
   async playNext() {
@@ -298,16 +318,21 @@ export class Director {
   }
 
   async playAnnouncement(announcement) {
+    const settings = await getSettings();
     this.phase = 'announcement';
-    this.announcement = announcement;
+    this.announcement = { ...announcement, voice: settings.dj_voice, rate: settings.dj_rate };
     this.sendScreen(this.currentCommand());
     this.broadcast();
   }
 
   async announcementEnded(id) {
     if (this.phase !== 'announcement' || this.announcement?.id !== id) return;
-    await query('UPDATE announcements SET last_played_at = now() WHERE id = $1', [id]);
-    await query('INSERT INTO announcement_plays (announcement_id) VALUES ($1)', [id]);
+    if (this.announcement.kind === 'dj') {
+      this.songsSinceDj = 0;
+    } else {
+      await query('UPDATE announcements SET last_played_at = now() WHERE id = $1', [id]);
+      await query('INSERT INTO announcement_plays (announcement_id) VALUES ($1)', [id]);
+    }
     this.announcement = null;
     await this.playNext();
   }

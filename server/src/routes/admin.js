@@ -4,6 +4,8 @@ import { requireAdmin } from '../auth.js';
 import { getSettings, saveSettings } from '../settings.js';
 import { importYouTubePlaylist } from '../youtube.js';
 import { exportBackup, importBackup } from '../backup.js';
+import { addSongsFromText, autotagCatalog, parseVideoId, saveSongs, searchYouTube } from '../songtools.js';
+import { previewDj } from '../dj.js';
 
 const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const httpError = (status, message) => Object.assign(new Error(message), { status, expose: true });
@@ -51,7 +53,8 @@ export default function adminRoutes(director) {
     if (!['youtube', 'licensed_audio'].includes(provider)) {
       throw httpError(400, 'Proveedor de música no válido');
     }
-    if (provider === 'youtube' && !/^[\w-]{11}$/.test(ref)) {
+    if (provider === 'youtube') body.stream_ref = parseVideoId(ref) ?? ref;
+    if (provider === 'youtube' && !/^[\w-]{11}$/.test(body.stream_ref)) {
       throw httpError(400, 'Ingresa un ID de video de YouTube válido');
     }
     if (provider === 'licensed_audio') {
@@ -66,6 +69,24 @@ export default function adminRoutes(director) {
       }
     }
   });
+
+  r.post('/import/youtube-videos', wrap(async (req, res) => {
+    const playlistId = req.body?.playlistId ? Number(req.body.playlistId) : null;
+    res.status(201).json(await addSongsFromText(req.body?.text, { playlistId }));
+  }));
+  r.get('/youtube/search', wrap(async (req, res) => res.json(await searchYouTube(req.query.q))));
+  r.post('/youtube/add', wrap(async (req, res) => {
+    const song = req.body?.song;
+    if (!song || !/^[\w-]{11}$/.test(song.stream_ref || '')) throw httpError(400, 'Canción no válida');
+    const clean = {
+      stream_ref: song.stream_ref, title: String(song.title || '').slice(0, 200), artist: String(song.artist || '').slice(0, 200),
+      genre: song.genre || null, energy: ['low', 'medium', 'high'].includes(song.energy) ? song.energy : null, mood: song.mood || null,
+      themes: Array.isArray(song.themes) ? song.themes : [], restrictions: Array.isArray(song.restrictions) ? song.restrictions : [],
+    };
+    res.status(201).json(await saveSongs([clean], req.body?.playlistId ? Number(req.body.playlistId) : null));
+  }));
+  r.post('/songs/autotag', wrap(async (_req, res) => res.json(await autotagCatalog())));
+  r.post('/dj/preview', wrap(async (_req, res) => res.json(await previewDj(director))));
 
   r.post('/import/youtube-playlist', wrap(async (req, res) => {
     const result = await importYouTubePlaylist(req.body?.url);

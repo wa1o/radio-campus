@@ -1,4 +1,5 @@
 import { transaction } from './db.js';
+import { cleanTrack, suggestTags } from './songtools.js';
 
 const MAX_PLAYLIST_ITEMS = 500;
 const httpError = (status, message) => Object.assign(new Error(message), { status, expose: true });
@@ -59,7 +60,7 @@ export function markAgeRestrictedTracks(tracks, videos) {
   }));
 }
 
-async function youtubeRequest(resource, params) {
+export async function youtubeRequest(resource, params) {
   if (!process.env.YOUTUBE_API_KEY) {
     throw httpError(503, 'Configura YOUTUBE_API_KEY en .env para importar playlists');
   }
@@ -128,12 +129,18 @@ export async function importYouTubePlaylist(playlistUrl) {
   for (let i = 0; i < tracks.length; i += 50) {
     const batch = tracks.slice(i, i + 50);
     const ratings = await youtubeRequest('videos', {
-      part: 'contentDetails',
+      part: 'contentDetails,topicDetails',
       id: batch.map(track => track.stream_ref).join(','),
     });
     ratedVideos.push(...(ratings.items || []));
   }
   tracks = markAgeRestrictedTracks(tracks, ratedVideos);
+  // Limpia títulos y sugiere etiquetas (género, energía, ambiente) para las nuevas.
+  const topicsById = new Map(ratedVideos.map(v => [v.id, v.topicDetails?.topicCategories || []]));
+  tracks = tracks.map(track => {
+    const tags = suggestTags({ title: track.title, topics: topicsById.get(track.stream_ref) || [], ageRestricted: track.restrictions.includes('explicit') });
+    return { ...track, ...cleanTrack(track.title, track.artist), ...tags };
+  });
   const truncated = rawItems.length > MAX_PLAYLIST_ITEMS || Boolean(pageToken);
   const references = tracks.map(track => track.stream_ref);
 
@@ -161,12 +168,12 @@ export async function importYouTubePlaylist(playlistUrl) {
     if (newTracks.length) {
       const values = [];
       const placeholders = newTracks.map((track, index) => {
-        const base = index * 6;
-        values.push(track.provider, track.title, track.artist, track.stream_ref, track.restrictions, track.active);
-        return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6})`;
+        const base = index * 10;
+        values.push(track.provider, track.title, track.artist, track.stream_ref, track.restrictions, track.active, track.genre, track.energy, track.mood, track.themes);
+        return `(${Array.from({ length: 10 }, (_, i) => `$${base + i + 1}`).join(', ')})`;
       });
       const inserted = await client.query(
-        `INSERT INTO songs (provider, title, artist, stream_ref, restrictions, active) VALUES ${placeholders.join(', ')} RETURNING id, stream_ref`,
+        `INSERT INTO songs (provider, title, artist, stream_ref, restrictions, active, genre, energy, mood, themes) VALUES ${placeholders.join(', ')} RETURNING id, stream_ref`,
         values,
       );
       for (const row of inserted.rows) idsByRef.set(row.stream_ref, row.id);

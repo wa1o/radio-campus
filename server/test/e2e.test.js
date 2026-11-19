@@ -135,7 +135,7 @@ test('ronda completa con varios dispositivos, contexto, anuncios y persistencia'
   await admin('/context_rules', 'POST', { name: 'Exámenes', priority: 10, condition: { event_type: 'exam', exclusive: true }, filters: { genres: ['instrumental'], energy: ['low'] }, active: true });
   await admin('/settings', 'PUT', {
     round_seconds: 3, tie_break: 'least_played', no_votes: 'fallback', recent_window: 0,
-    excluded_restrictions: ['explicit'], fallback_playlist_id: playlist.id,
+    excluded_restrictions: ['explicit'], fallback_playlist_id: playlist.id, dj_enabled: false,
     context_override: { temp: 26 },
   });
   log(`catálogo: ${songs.length} canciones, 2 reglas, lista de respaldo #${playlist.id}`);
@@ -205,6 +205,21 @@ test('ronda completa con varios dispositivos, contexto, anuncios y persistencia'
   const third = await scr.until(() => scr.commands.at(-1).type === 'play' && scr.commands.at(-1).playId !== second.playId && scr.commands.at(-1), 'música tras el anuncio');
   assert.equal(third.streamRef, byId[noVotes.winner.id].stream_ref, 'tras el anuncio suena la ganadora, sin superponerse');
   log(`anuncio #${ann.id} entre canciones; luego suena «${noVotes.winner.title}»`);
+
+  // Locutor automático: habla entre canciones con los datos reales (plantillas, sin GEMINI_API_KEY)
+  await admin(`/announcements/${ann.id}/unapprove`, 'POST');
+  await admin('/settings', 'PUT', { dj_enabled: true, dj_every_n_songs: 1, dj_station_name: 'Radio Prueba' });
+  const round4 = await scr.until(() => scr.state?.round?.status === 'open' && scr.state.round, 'ronda 4');
+  await device('teléfono E').vote(round4.candidates[1].id);
+  scr.socket.emit('songEnded', { playId: third.playId });
+  const djCmd = await scr.until(() => scr.commands.find(c => c.type === 'announcement' && c.kind === 'dj'), 'locución del locutor');
+  assert.match(djCmd.text, new RegExp(round4.candidates[1].title), 'el locutor presenta a la ganadora');
+  assert.match(djCmd.text, /QR/);
+  await scr.until(() => scr.state?.announcement?.kind === 'dj', 'estado con locutor');
+  scr.socket.emit('announcementEnded', { id: djCmd.id });
+  const fourth = await scr.until(() => scr.commands.at(-1).type === 'play' && scr.commands.at(-1).playId !== third.playId && scr.commands.at(-1), 'música tras el locutor');
+  assert.equal(fourth.streamRef, byId[round4.candidates[1].id].stream_ref);
+  log(`locutor: «${djCmd.text}»`);
 
   // Persistencia: reiniciar el servidor conserva ajustes y datos
   const before = await admin('/settings');
