@@ -5,7 +5,7 @@
 | Servicio | Para qué | Cómo obtenerla |
 |---|---|---|
 | GitHub | Repositorio y despliegue automático | Acceso al repo `wa1o/radio-campus` |
-| Render | Hosting HTTPS con planes gratuitos limitados | render.com |
+| Render y un proveedor PostgreSQL | Hosting HTTPS y base de datos remota | Cuentas en ambos servicios |
 | Google Cloud | YouTube Data API v3 (importar playlists) | Crear proyecto → habilitar YouTube Data API v3 → *Credenciales* → *Crear clave de API* |
 
 Restringe la clave de API en Google Cloud a YouTube Data API v3.
@@ -37,22 +37,23 @@ Abre:
 - Pantalla: http://localhost:3000/screen → ingresa `SCREEN_KEY` una vez en ese navegador y pulsa **Preparar pantalla**. En cada inicio, pulsa **Activar audio** (los navegadores exigen un clic antes de reproducirlo).
 - Votación: http://localhost:3000/vote (desde un teléfono en la misma red usa la IP de la computadora, p. ej. `http://192.168.1.20:3000/vote`)
 
-## 3. Despliegue gratuito en Render (pruebas y uso ligero)
+## 3. Despliegue en Render con PostgreSQL remoto
 
-1. Sube los cambios a GitHub.
-2. En Render: **New → Blueprint**, elige el repositorio. `render.yaml` crea recursos **Free**:
-   - `radio-campus` (servicio web Node)
-   - `radio-campus-db` (PostgreSQL Free)
-   `JWT_SECRET` y `SCREEN_KEY` se generan solos; `DATABASE_URL` se conecta sola.
-3. Completa en el servicio web → *Environment* los valores marcados para capturar: `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `YOUTUBE_API_KEY`.
-4. Espera el primer despliegue. Render asigna `https://radio-campus-XXXX.onrender.com` con HTTPS.
-5. Comprueba `https://…/api/health` → `{"ok":true,"db":true,…}`.
-6. Consulta `SCREEN_KEY` en *Environment*, abre `https://…/screen` en el navegador dedicado a la pantalla e ingrésala. La clave se recuerda en ese navegador y no queda en la URL.
-7. Para mantener el gasto en **$0**, no agregues un método de pago a Render (o quítalo antes de desplegar). Si la cuenta tiene un método de pago, los excedentes de ancho de banda o compilación podrían generar cargos. Sin método de pago, Render suspende el servicio al alcanzar los límites incluidos.
+1. Crea una base PostgreSQL en el proveedor elegido y copia su URI de conexión **externa**. La base debe aceptar conexiones TLS desde Render y permitir conexiones entrantes desde la aplicación.
+2. Sube los cambios a GitHub.
+3. En Render: **New → Blueprint**, elige el repositorio. `render.yaml` crea solo `radio-campus` (servicio web Node, plan Free) y solicitará `DATABASE_URL` al crear el servicio. Pega la URI del paso 1 como secreto; no la guardes en el repositorio.
+4. Completa las variables solicitadas: `DATABASE_URL`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `YOUTUBE_API_KEY`. `JWT_SECRET` y `SCREEN_KEY` se generan solos; `PGSSL=true` ya está configurado.
+5. Espera el despliegue. Render asigna `https://radio-campus-XXXX.onrender.com` con HTTPS.
+6. Comprueba `https://…/api/health` → `{"ok":true,"db":true,…}`. El servidor crea el esquema al arrancar.
+7. Consulta `SCREEN_KEY` en *Environment*, abre `https://…/screen` en el navegador dedicado a la pantalla e ingrésala. La clave se recuerda en ese navegador y no queda en la URL.
 
 Cada `git push` a la rama principal vuelve a desplegar. Las variables se cambian sin tocar el código.
 
-> **Límites importantes del plan gratuito:** el servicio web se duerme tras 15 minutos sin tráfico entrante y puede tardar alrededor de un minuto en despertar. Las conexiones WebSocket activas ayudan a mantener actividad, pero no garantizan disponibilidad continua. La base PostgreSQL gratuita tiene 1 GB, no incluye respaldos y **caduca 30 días después de crearla**; tras un período de gracia, Render la elimina con todos sus datos. Además, solo puedes tener una base PostgreSQL gratuita activa por workspace. Exporta respaldos periódicamente y no uses esta configuración para una radio que requiera operación continua o datos permanentes.
+> **Límites y costos:** el servicio web Free de Render se duerme tras 15 minutos sin tráfico entrante y puede tardar alrededor de un minuto en despertar. Las conexiones WebSocket activas cuentan como tráfico, pero no garantizan disponibilidad continua. La base de datos ahora es externa: su proveedor establece los límites, la persistencia, los respaldos y cualquier costo. Verifica sus condiciones antes de crearla.
+
+Para mantener el costo en **$0**, usa planes gratuitos en ambos proveedores y no agregues método de pago (o quítalo antes del despliegue). Si Render tiene un método de pago asociado, el excedente de ancho de banda o compilación puede generar cargos. Sin método de pago, Render suspende el servicio al agotar los límites incluidos.
+
+`PGSSL=true` cifra la conexión y valida el certificado TLS del servidor. Si el proveedor usa una autoridad certificadora privada, configura su certificado según la documentación del proveedor antes de desplegar; no desactives la validación TLS.
 
 ### Alternativas
 

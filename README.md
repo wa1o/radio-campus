@@ -50,7 +50,7 @@ La prueba de integración levanta el servidor, simula la pantalla y tres teléfo
 
 ## Despliegue
 
-El repositorio incluye un blueprint gratuito de Render (`render.yaml`) para pruebas y uso ligero. Sus límites —incluida la caducidad de la base gratuita— se detallan en [docs/INSTALACION_Y_DESPLIEGUE.md](docs/INSTALACION_Y_DESPLIEGUE.md).
+El repositorio incluye un blueprint de Render (`render.yaml`) para alojar el servicio web con un PostgreSQL externo. Los límites de los planes gratuitos se detallan en [docs/INSTALACION_Y_DESPLIEGUE.md](docs/INSTALACION_Y_DESPLIEGUE.md).
 
 ## Documentación
 

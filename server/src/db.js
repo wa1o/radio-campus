@@ -3,7 +3,7 @@ import fs from 'node:fs';
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : false,
+  ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: true } : false,
 });
 
 export const query = (text, params) => pool.query(text, params);

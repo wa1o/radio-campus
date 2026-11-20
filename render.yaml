@@ -1,4 +1,4 @@
-# Blueprint de Render: recursos gratuitos para pruebas y uso ligero.
+# Blueprint de Render: servicio web gratuito conectado a un PostgreSQL externo.
 # En Render: New > Blueprint > selecciona este repositorio.
 services:
   - type: web
@@ -12,9 +12,7 @@ services:
       - key: NODE_VERSION
         value: "22"
       - key: DATABASE_URL
-        fromDatabase:
-          name: radio-campus-db
-          property: connectionString
+        sync: false
       - key: PGSSL
         value: "true"
       - key: JWT_SECRET
@@ -35,8 +33,3 @@ services:
         value: "22.2553"
       - key: STATION_LON
         value: "-97.8686"
-
-databases:
-  - name: radio-campus-db
-    plan: free
-    databaseName: radio_campus
