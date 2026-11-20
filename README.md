@@ -4,7 +4,7 @@ Radio inteligente e interactiva para el campus. La comunidad vota desde el telé
 
 | Interfaz | Ruta | Uso |
 |---|---|---|
-| Pantalla pública | `/screen?key=SCREEN_KEY` | Pantalla horizontal del campus; reproduce la música y muestra la ronda, QR, temporizador, resultados y avisos |
+| Pantalla pública | `/screen` | Pantalla horizontal del campus; pide la clave una vez por dispositivo y muestra la ronda, QR, temporizador, resultados y avisos |
 | Votación móvil | `/vote` | Página que abre el QR; no requiere instalar nada |
 | Panel de administración | `/admin` | Catálogo, reglas, eventos, anuncios, control en vivo, estadísticas y ajustes |
 
@@ -36,7 +36,7 @@ npm run dev:client   # Vite en :5173 (redirige /api y /socket.io al servidor)
 
 ### Variables de entorno
 
-Todas se describen en [`.env.example`](.env.example). Las obligatorias son `DATABASE_URL`, `JWT_SECRET` y `SCREEN_KEY`; el servidor no arranca sin ellas. Las claves nunca se envían al navegador ni se guardan en el repositorio (`.env` está en `.gitignore`).
+Las obligatorias son `DATABASE_URL`, `JWT_SECRET` y `SCREEN_KEY`; el servidor no arranca sin ellas. No guardes secretos en el repositorio (`.env` está en `.gitignore`). La clave de pantalla se ingresa en el navegador de la pantalla y se usa para autenticar su conexión; el resto de secretos del servidor no se expone al cliente.
 
 ## Pruebas
 
@@ -50,7 +50,7 @@ La prueba de integración levanta el servidor, simula la pantalla y tres teléfo
 
 ## Despliegue
 
-El repositorio incluye un blueprint de Render (`render.yaml`) que crea el servicio web y la base PostgreSQL con HTTPS. Pasos completos y alternativas en [docs/INSTALACION_Y_DESPLIEGUE.md](docs/INSTALACION_Y_DESPLIEGUE.md).
+El repositorio incluye un blueprint gratuito de Render (`render.yaml`) para pruebas y uso ligero. Sus límites —incluida la caducidad de la base gratuita— se detallan en [docs/INSTALACION_Y_DESPLIEGUE.md](docs/INSTALACION_Y_DESPLIEGUE.md).
 
 ## Documentación
 

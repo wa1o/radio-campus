@@ -5,7 +5,7 @@
 | Servicio | Para qué | Cómo obtenerla |
 |---|---|---|
 | GitHub | Repositorio y despliegue automático | Acceso al repo `wa1o/radio-campus` |
-| Render (u otro alojamiento Node + PostgreSQL) | Servidor con HTTPS y base de datos | render.com, cuenta con método de pago para planes sin suspensión |
+| Render | Hosting HTTPS con planes gratuitos limitados | render.com |
 | Google Cloud | YouTube Data API v3 (importar playlists) | Crear proyecto → habilitar YouTube Data API v3 → *Credenciales* → *Crear clave de API* |
 
 Restringe la clave de API en Google Cloud a YouTube Data API v3.
@@ -34,36 +34,38 @@ npm start
 Abre:
 
 - Panel: http://localhost:3000/admin
-- Pantalla: http://localhost:3000/screen?key=TU_SCREEN_KEY → pulsa **Activar pantalla** (los navegadores exigen un clic antes de reproducir audio)
+- Pantalla: http://localhost:3000/screen → ingresa `SCREEN_KEY` una vez en ese navegador y pulsa **Preparar pantalla**. En cada inicio, pulsa **Activar audio** (los navegadores exigen un clic antes de reproducirlo).
 - Votación: http://localhost:3000/vote (desde un teléfono en la misma red usa la IP de la computadora, p. ej. `http://192.168.1.20:3000/vote`)
 
-## 3. Despliegue en Render (recomendado)
+## 3. Despliegue gratuito en Render (pruebas y uso ligero)
 
 1. Sube los cambios a GitHub.
-2. En Render: **New → Blueprint**, elige el repositorio. Render lee `render.yaml` y crea:
-   - `radio-campus` (servicio web Node, plan Starter, siempre encendido)
-   - `radio-campus-db` (PostgreSQL Basic-256mb)
+2. En Render: **New → Blueprint**, elige el repositorio. `render.yaml` crea recursos **Free**:
+   - `radio-campus` (servicio web Node)
+   - `radio-campus-db` (PostgreSQL Free)
    `JWT_SECRET` y `SCREEN_KEY` se generan solos; `DATABASE_URL` se conecta sola.
 3. Completa en el servicio web → *Environment* los valores marcados para capturar: `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `YOUTUBE_API_KEY`.
 4. Espera el primer despliegue. Render asigna `https://radio-campus-XXXX.onrender.com` con HTTPS.
 5. Comprueba `https://…/api/health` → `{"ok":true,"db":true,…}`.
-6. Consulta el valor de `SCREEN_KEY` en *Environment* y abre la pantalla con `https://…/screen?key=ESE_VALOR`.
-7. Opcional: dominio propio (p. ej. `radio.iest.edu.mx`) en *Settings → Custom Domains*; Render emite el certificado.
+6. Consulta `SCREEN_KEY` en *Environment*, abre `https://…/screen` en el navegador dedicado a la pantalla e ingrésala. La clave se recuerda en ese navegador y no queda en la URL.
+7. Para mantener el gasto en **$0**, no agregues un método de pago a Render (o quítalo antes de desplegar). Si la cuenta tiene un método de pago, los excedentes de ancho de banda o compilación podrían generar cargos. Sin método de pago, Render suspende el servicio al alcanzar los límites incluidos.
 
 Cada `git push` a la rama principal vuelve a desplegar. Las variables se cambian sin tocar el código.
 
-> Los planes gratuitos de Render no sirven para operar: el servicio web se suspende tras 15 min sin tráfico (la pantalla perdería la conexión) y la base gratuita se elimina a los 30 días. Úsalos solo para demostraciones cortas.
+> **Límites importantes del plan gratuito:** el servicio web se duerme tras 15 minutos sin tráfico entrante y puede tardar alrededor de un minuto en despertar. Las conexiones WebSocket activas ayudan a mantener actividad, pero no garantizan disponibilidad continua. La base PostgreSQL gratuita tiene 1 GB, no incluye respaldos y **caduca 30 días después de crearla**; tras un período de gracia, Render la elimina con todos sus datos. Además, solo puedes tener una base PostgreSQL gratuita activa por workspace. Exporta respaldos periódicamente y no uses esta configuración para una radio que requiera operación continua o datos permanentes.
 
 ### Alternativas
 
-Cualquier plataforma con Node ≥ 18, WebSockets y PostgreSQL funciona (Railway, Fly.io, un VPS con Nginx + Certbot). Comandos: build `npm run build`, start `npm start`, health check `/api/health`. Si la base exige SSL, define `PGSSL=true`. Debe ejecutarse **una sola instancia**.
+Cualquier plataforma con Node ≥ 18, WebSockets y PostgreSQL puede alojar la app, pero las alternativas pueden tener cargos. Comandos: build `npm run build`, start `npm start`, health check `/api/health`. Si la base exige SSL, define `PGSSL=true`. Debe ejecutarse **una sola instancia**.
 
 ## 4. Puesta en marcha de la pantalla del campus
 
 1. Computadora o mini-PC conectada a la pantalla y a bocinas, con Chrome o Edge.
-2. Abre la URL de la pantalla en modo kiosco, p. ej. `chrome --kiosk "https://…/screen?key=…"`, y pulsa **Activar pantalla**.
+2. Abre `https://…/screen` en modo kiosco. La primera vez, ingresa `SCREEN_KEY`; después el navegador recordará este dispositivo. Pulsa **Preparar pantalla** y luego **Activar audio**.
 3. Desactiva la suspensión de pantalla y de equipo.
 4. El reproductor de YouTube debe quedar visible (mínimo 200×200 px); así lo exigen las políticas de YouTube.
+
+Usa un perfil de navegador dedicado a la pantalla y no compartas ni pegues la clave en URLs públicas. El formato anterior `/screen?key=…` sigue funcionando por compatibilidad, pero la clave en la URL puede quedar en el historial o en registros del proveedor. Si cambias `SCREEN_KEY` en Render, vuelve a ingresarla con **Ingresar otra clave**.
 
 ## 5. Restablecer el servicio
 

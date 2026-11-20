@@ -24,20 +24,92 @@ const formatTime = value => {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 };
 
+const screenKeyStorage = 'radio-campus-screen-key';
+
 export default function Screen() {
-  const key = new URLSearchParams(window.location.search).get('key');
+  const queryKey = new URLSearchParams(window.location.search).get('key');
+  const [credentials] = useState(() => {
+    try {
+      return { key: queryKey || window.localStorage.getItem(screenKeyStorage) || '', warning: null };
+    } catch {
+      return { key: queryKey || '', warning: 'Este navegador no permite recordar la clave; tendrás que ingresarla de nuevo la próxima vez.' };
+    }
+  });
+  const [screenKey, setScreenKey] = useState(credentials.key);
+  const [keyInput, setKeyInput] = useState('');
+  const [storageWarning, setStorageWarning] = useState(credentials.warning);
   const [started, setStarted] = useState(false);
+
+  useEffect(() => {
+    if (!queryKey) return;
+    try {
+      window.localStorage.setItem(screenKeyStorage, queryKey);
+      setStorageWarning(null);
+    } catch {
+      setStorageWarning('Este navegador no permite recordar la clave; tendrás que ingresarla de nuevo la próxima vez.');
+    }
+    window.history.replaceState(window.history.state, '', '/screen');
+  }, [queryKey]);
+
+  function prepareScreen(event) {
+    event?.preventDefault();
+    const key = (screenKey || keyInput).trim();
+    if (!key) return;
+    try {
+      window.localStorage.setItem(screenKeyStorage, key);
+      setStorageWarning(null);
+    } catch {
+      setStorageWarning('No se pudo guardar la clave en este navegador; tendrás que ingresarla de nuevo la próxima vez.');
+    }
+    setScreenKey(key);
+    setKeyInput('');
+    setStarted(true);
+  }
+
+  function resetScreenKey() {
+    setStarted(false);
+    setScreenKey('');
+    setKeyInput('');
+    try {
+      window.localStorage.removeItem(screenKeyStorage);
+      setStorageWarning(null);
+    } catch {
+      setStorageWarning('No se pudo borrar la clave guardada. Borra los datos del sitio e inténtalo de nuevo.');
+    }
+  }
+
   if (!started) {
+    if (!screenKey) {
+      return (
+        <div className="screen start">
+          <form className="screen-key-form" onSubmit={prepareScreen}>
+            <h1>Pantalla del campus</h1>
+            <p>Ingresa la clave de pantalla una vez para recordar este dispositivo.</p>
+            <label>
+              Clave de pantalla
+              <input autoFocus autoComplete="current-password" type="password" value={keyInput} onChange={event => setKeyInput(event.target.value)} required />
+            </label>
+            {storageWarning && <p className="screen-storage-warning" role="status">{storageWarning}</p>}
+            <button type="submit">Guardar y preparar pantalla</button>
+          </form>
+        </div>
+      );
+    }
     return (
       <div className="screen start">
-        <button onClick={() => setStarted(true)}>Preparar pantalla</button>
+        <div className="screen-key-form">
+          <h1>Pantalla del campus</h1>
+          <p>Este dispositivo ya está autorizado.</p>
+          {storageWarning && <p className="screen-storage-warning" role="status">{storageWarning}</p>}
+          <button onClick={prepareScreen}>Preparar pantalla</button>
+        </div>
       </div>
     );
   }
-  return <ScreenLive screenKey={key} />;
+  return <ScreenLive screenKey={screenKey} storageWarning={storageWarning} onResetScreenKey={resetScreenKey} />;
 }
 
-function ScreenLive({ screenKey }) {
+function ScreenLive({ screenKey, storageWarning, onResetScreenKey }) {
   const { state, connected, offset, socketRef } = useStation({ role: 'screen', key: screenKey });
   const secs = useCountdown(state, offset);
   const ytBox = useRef(null);
@@ -281,7 +353,16 @@ function ScreenLive({ screenKey }) {
     return () => clearInterval(timer);
   }, []);
 
-  if (authError) return <div className="screen start"><p>{authError}</p></div>;
+  if (authError) {
+    return (
+      <div className="screen start">
+        <div className="screen-key-form">
+          <p role="alert">{authError}</p>
+          <button onClick={onResetScreenKey}>Ingresar otra clave</button>
+        </div>
+      </div>
+    );
+  }
 
   const round = state?.round;
   const total = round ? Object.values(round.counts).reduce((x, y) => x + y, 0) : 0;
@@ -297,6 +378,7 @@ function ScreenLive({ screenKey }) {
 
   return (
     <div className="screen">
+      {storageWarning && <div className="screen-storage-warning" role="status">{storageWarning}</div>}
       <header className="screen-now">
         {now?.thumbnailUrl
           ? <img className="cover" src={now.thumbnailUrl} alt="" />

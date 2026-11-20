@@ -419,3 +419,13 @@ td.actions button + button { margin-left: 6px; }
   .contender img { width: 58px; }
   .duel-bar small { font-size: 10px; }
 }
+
+.screen-key-form {
+  display: grid; gap: 16px; width: min(100%, 480px); padding: clamp(20px, 4vw, 36px);
+  border: 1px solid var(--s-line); border-radius: 20px; background: var(--s-panel);
+}
+.screen-key-form h1 { margin: 0; font-size: clamp(28px, 5vw, 44px); }
+.screen-key-form p { margin: 0; color: var(--s-muted); }
+.screen-key-form label { color: var(--s-ink); }
+.screen-key-form input { color-scheme: light; }
+.screen-key-form .screen-storage-warning { color: var(--amber); font-size: 14px; }
