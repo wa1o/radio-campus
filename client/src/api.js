@@ -5,7 +5,9 @@ export async function api(path, { method = 'GET', body, blob = false } = {}) {
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`/api${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
-  if (res.status === 401 && token) window.dispatchEvent(new Event('admin-logout'));
+  if (res.status === 401 && token) {
+    window.dispatchEvent(new CustomEvent('admin-logout', { detail: { message: 'La sesión expiró. Ingresa de nuevo.' } }));
+  }
   if (!res.ok) {
     const json = await res.json().catch(() => ({}));
     throw new Error(json.error || `Error ${res.status}`);

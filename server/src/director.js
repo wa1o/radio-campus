@@ -26,6 +26,7 @@ export class Director {
     this.retryTimer = null;
     this.remainingMs = null;
     this.forcedNext = null;
+    this.playlistPlayback = null;
     this.announcement = null;
     this.songsSinceDj = 0;
     this.djDraft = null;
@@ -76,6 +77,12 @@ export class Director {
         resolution: r.resolution,
       },
       forcedNext: pub(this.forcedNext),
+      playlistPlayback: this.playlistPlayback && {
+        id: this.playlistPlayback.id,
+        name: this.playlistPlayback.name,
+        current: this.playlistPlayback.index >= 0 ? pub(this.playlistPlayback.songs[this.playlistPlayback.index]) : null,
+        remaining: Math.max(0, this.playlistPlayback.songs.length - this.playlistPlayback.index - 1),
+      },
       announcement: this.announcement,
       ruleName: this.ruleName,
       context: this.context && {
@@ -153,6 +160,7 @@ export class Director {
   }
 
   async bootstrap() {
+    if (this.playlistPlayback) return this.playNext();
     const { candidates, ruleName, context } = await pickCandidates([]);
     this.ruleName = ruleName;
     this.context = context;
@@ -271,6 +279,7 @@ export class Director {
       this.pendingAdvance = true;
       return this.broadcast();
     }
+    if (this.playlistPlayback) return this.playNext();
     const due = await this.dueAnnouncement();
     if (due) return this.playAnnouncement(due);
     const settings = await getSettings();
@@ -290,7 +299,18 @@ export class Director {
   async playNext() {
     let next = null;
     let source = 'votación';
-    if (this.forcedNext) {
+    if (this.playlistPlayback) {
+      const nextIndex = this.playlistPlayback.index + 1;
+      if (nextIndex < this.playlistPlayback.songs.length) {
+        this.playlistPlayback.index = nextIndex;
+        next = this.playlistPlayback.songs[nextIndex];
+        source = 'playlist';
+      } else {
+        this.playlistPlayback = null;
+        this.round = null;
+        return this.bootstrap();
+      }
+    } else if (this.forcedNext) {
       next = this.forcedNext;
       source = 'admin';
       this.forcedNext = null;
@@ -301,7 +321,8 @@ export class Director {
     this.round = null;
     if (!next) return this.bootstrap();
     await this.playSong(next, roundId, source);
-    await this.openRound();
+    if (source === 'playlist') this.broadcast();
+    else await this.openRound();
   }
 
   async dueAnnouncement() {
@@ -417,5 +438,34 @@ export class Director {
     if (!rows[0]) throw httpError(404, 'Canción no encontrada o inactiva');
     this.forcedNext = rows[0];
     this.broadcast();
+  }
+
+  async playPlaylist(playlistId) {
+    const { rows } = await query(`
+      SELECT p.id AS playlist_id, p.name AS playlist_name, s.*
+      FROM playlists p
+      LEFT JOIN playlist_songs ps ON ps.playlist_id = p.id
+      LEFT JOIN songs s ON s.id = ps.song_id AND s.active
+      WHERE p.id = $1
+      ORDER BY s.title`,
+    [playlistId]);
+    if (!rows.length) throw httpError(404, 'Lista no encontrada');
+    const songs = rows.filter(row => row.id != null).map(({ playlist_id, playlist_name, ...song }) => song);
+    if (!songs.length) throw httpError(409, 'La lista no tiene canciones activas para reproducir');
+
+    if (this.round?.status === 'open') {
+      clearTimeout(this.roundTimer);
+      await query("UPDATE rounds SET status = 'aborted', closed_at = now(), resolution = 'lista seleccionada por el administrador' WHERE id = $1", [this.round.id]);
+    }
+    this.round = null;
+    this.remainingMs = null;
+    this.playlistPlayback = {
+      id: rows[0].playlist_id,
+      name: rows[0].playlist_name,
+      songs,
+      index: -1,
+    };
+    if (this.phase === 'idle' && this.screenOnline && !this.paused) await this.playNext();
+    else this.broadcast();
   }
 }

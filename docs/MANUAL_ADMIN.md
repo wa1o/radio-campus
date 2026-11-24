@@ -1,6 +1,6 @@
 # Manual de operación para el administrador
 
-Entra a `https://<tu-dominio>/admin` con tu correo y contraseña. La sesión dura 8 horas.
+Entra a `https://<tu-dominio>/admin` con tu correo y contraseña. La sesión dura 8 horas; si ya había una sesión guardada, el panel la valida al abrir y solicita el ingreso de nuevo si venció.
 
 ## Control (pantalla principal)
 
@@ -10,6 +10,7 @@ Entra a `https://<tu-dominio>/admin` con tu correo y contraseña. La sesión dur
 - **Saltar**: termina la canción o el anuncio actual y pasa a la siguiente.
 - **Regenerar ronda**: descarta la votación abierta y propone dos opciones nuevas con el contexto actual (útil tras cambiar reglas o eventos).
 - **Fijar como siguiente**: elige manualmente la próxima canción; tiene prioridad sobre la votación.
+- **Reproducir lista**: elige una lista y pulsa el botón para programarla. Empezará al terminar la canción o el aviso actual, respetará el orden alfabético que muestra la lista, pausará las rondas mientras suena y volverá a la programación normal al acabar. Solo se reproducen canciones activas.
 - **Último error**: fallas del reproductor o falta de canciones.
 
 ## Canciones
@@ -37,7 +38,7 @@ Las etiquetas sugeridas salen de las categorías de YouTube (con clave), de pala
 
 ## Listas
 
-Agrupan canciones. Al menos una debe ser la **lista de respaldo** (se elige en Ajustes): música segura para cualquier momento, con varias canciones, que se usa cuando no hay opciones suficientes o faltan datos de clima o calendario.
+Agrupan canciones. Desde **Control → Reproducir lista** puedes poner una lista en escucha después de la canción o el aviso actual. Mientras suena, no se abren rondas; al terminar, vuelve la programación normal. Solo se reproducen canciones activas, en el orden que muestra la lista. Al menos una debe ser la **lista de respaldo** (se elige en Ajustes): música segura para cualquier momento, con varias canciones, que se usa cuando no hay opciones suficientes o faltan datos de clima o calendario.
 
 ## Reglas contextuales
 

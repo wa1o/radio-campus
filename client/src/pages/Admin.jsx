@@ -182,7 +182,8 @@ function usePlaylists() {
 }
 
 const fmtDuration = s => (s ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : '');
-const tagLine = s => [s.genre, { low: 'energía baja', medium: 'energía media', high: 'energía alta' }[s.energy], s.mood, s.restrictions?.includes('explicit') && 'explícita']
+const tagLine = s => [s.genre, { low: 'energía baja', medium: 'energía media', high: 'energía alta' }[s.energy], s.mood,
+  s.restrictions?.includes('explicit') && 'explícita', s.restrictions?.includes('revisar') && 'por revisar']
   .filter(Boolean).join(', ') || 'sin etiquetas sugeridas';
 
 function SongAdder({ onAdded }) {
@@ -365,12 +366,24 @@ function Songs() {
     const out = await api('/admin/songs/autotag', { method: 'POST' }).catch(err => { setTagMsg(null); throw err; });
     setTagMsg(out.updated ? `Se completaron etiquetas en ${out.updated} canciones.${out.pending ? ` ${out.pending} siguen sin género: edítalas a mano.` : ''}` : 'No había etiquetas que completar automáticamente.');
   }).catch(() => setTagMsg(null));
+  const aiTag = run => run(async () => {
+    setTagMsg('La IA está revisando el catálogo…');
+    const out = await api('/admin/songs/ai-tag', { method: 'POST' }).catch(err => { setTagMsg(null); throw err; });
+    setTagMsg(out.tagged
+      ? `La IA etiquetó ${out.tagged} canciones: ${out.explicit} explícitas y ${out.review} por revisar.${out.pending ? ` Faltan ${out.pending}; vuelve a pulsar el botón.` : ''}`
+      : 'Todas las canciones ya fueron revisadas por la IA.');
+  }).catch(() => setTagMsg(null));
   return (
     <>
       <SongAdder onAdded={() => setRefreshKey(key => key + 1)} />
       {tagMsg && <p className="notice success">{tagMsg}</p>}
       <Crud resource="songs" title="Canciones" fields={songFields} refreshKey={refreshKey}
-        headerExtra={run => <button className="secondary" onClick={() => autotag(run)} title="Llena género, energía y ambiente vacíos">Completar etiquetas</button>}
+        headerExtra={run => (
+          <>
+            <button className="secondary" onClick={() => aiTag(run)} title="Llena etiquetas vacías, temáticas de época y marca explícitas o dudosas">Etiquetar con IA</button>
+            <button className="secondary" onClick={() => autotag(run)} title="Llena género, energía y ambiente vacíos">Completar etiquetas</button>
+          </>
+        )}
         columns={[
           ['', s => (s.provider === 'youtube' ? <img className="thumb" src={`https://i.ytimg.com/vi/${s.stream_ref}/default.jpg`} alt="" /> : '♪')],
           ['Título', s => <><strong>{s.title}</strong><br /><span className="muted">{s.artist}</span></>],
@@ -443,13 +456,35 @@ function announcementActions(row, run) {
 function Control() {
   const { state, connected } = useStation({});
   const [songs, setSongs] = useState([]);
+  const [playlists, setPlaylists] = useState([]);
   const [next, setNext] = useState('');
+  const [playlistId, setPlaylistId] = useState('');
   const [error, setError] = useState(null);
+  const [playlistMessage, setPlaylistMessage] = useState(null);
 
-  useEffect(() => { api('/admin/songs').then(setSongs).catch(e => setError(e.message)); }, []);
+  useEffect(() => {
+    Promise.all([api('/admin/songs'), api('/admin/playlists')])
+      .then(([songList, playlistList]) => {
+        setSongs(songList);
+        setPlaylists(playlistList);
+      })
+      .catch(e => setError(e.message));
+  }, []);
   const act = (action, body) => api(`/admin/control/${action}`, { method: 'POST', body })
     .then(() => setError(null))
     .catch(e => setError(e.message));
+  const queuePlaylist = async () => {
+    setError(null);
+    setPlaylistMessage(null);
+    try {
+      const updated = await api(`/admin/playlists/${playlistId}/play`, { method: 'POST' });
+      setPlaylistMessage(updated.playlistPlayback.current
+        ? `«${updated.playlistPlayback.name}» ya está sonando.`
+        : `«${updated.playlistPlayback.name}» empezará en la siguiente transición.`);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
 
   if (!state) return <p>Conectando…</p>;
   const round = state.round;
@@ -520,6 +555,23 @@ function Control() {
             </select>
             <button className="secondary" disabled={!next} onClick={() => act('next', { songId: Number(next) })}>Fijar</button>
           </div>
+          <div className="playlist-picker">
+            <label>
+              Escuchar una lista
+              <select value={playlistId} onChange={e => setPlaylistId(e.target.value)}>
+                <option value="">Selecciona una lista…</option>
+                {playlists.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
+            <button disabled={!playlistId} onClick={queuePlaylist}>Reproducir lista</button>
+          </div>
+          {playlistMessage && <p className="ok" role="status">{playlistMessage}</p>}
+          {state.playlistPlayback && (
+            <p className="muted" role="status">
+              Lista {state.playlistPlayback.current ? 'en reproducción' : 'programada'}: <strong>{state.playlistPlayback.name}</strong>
+              {state.playlistPlayback.remaining > 0 && ` · ${state.playlistPlayback.remaining} ${state.playlistPlayback.remaining === 1 ? 'canción restante' : 'canciones restantes'}`}
+            </p>
+          )}
         </div>
         <div className="card">
           <h3>Contexto</h3>
@@ -729,8 +781,7 @@ function Settings() {
         </select>
       </label>
       <label>Evitar repetir las últimas N canciones<input type="number" min="0" value={s.recent_window} onChange={set('recent_window')} required /></label>
-      <label>Restricciones excluidas (separadas por coma, p. ej. explicit)<input value={s.excluded_restrictions} onChange={set('excluded_restrictions')} /></label>
-      <label>Lista para rotación automática (opcional)
+      <label>Restricciones excluidas (separadas por coma, p. ej. explicit, revisar)<input value={s.excluded_restrictions} onChange={set('excluded_restrictions')} /></label>      <label>Lista para rotación automática (opcional)
         <select value={s.source_playlist_id ?? ''} onChange={set('source_playlist_id')}>
           <option value="">— catálogo completo —</option>
           {playlists.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -836,38 +887,46 @@ function Backup() {
   );
 }
 
-function Login({ onLogin }) {
+function Login({ onLogin, initialError }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState(null);
+  const [error, setError] = useState(initialError || null);
+  const [busy, setBusy] = useState(false);
 
   const submit = async e => {
     e.preventDefault();
     setError(null);
+    setBusy(true);
     try {
       const { token } = await api('/login', { method: 'POST', body: { email, password } });
       onLogin(token);
     } catch (err) {
       setError(err.message);
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
     <form className="card login" onSubmit={submit}>
       <h1>Panel de administración</h1>
-      <label>Correo<input type="email" value={email} onChange={e => setEmail(e.target.value)} required /></label>
-      <label>Contraseña<input type="password" value={password} onChange={e => setPassword(e.target.value)} required /></label>
-      {error && <p className="error">{error}</p>}
-      <button type="submit">Entrar</button>
+      <p className="muted">Ingresa con las credenciales de administrador.</p>
+      <label>Correo<input type="email" autoComplete="username" autoFocus value={email} onChange={e => setEmail(e.target.value)} required /></label>
+      <label>Contraseña<input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required /></label>
+      {error && <p className="error" role="alert">{error}</p>}
+      <button type="submit" disabled={busy}>{busy ? 'Ingresando…' : 'Entrar'}</button>
     </form>
   );
 }
 
 export default function Admin() {
   const [token, setToken] = useState(() => sessionStorage.getItem('adminToken'));
-  const logout = () => {
+  const [checkingSession, setCheckingSession] = useState(() => Boolean(sessionStorage.getItem('adminToken')));
+  const [sessionError, setSessionError] = useState(null);
+  const logout = event => {
     sessionStorage.removeItem('adminToken');
     setToken(null);
+    setSessionError(event?.detail?.message || null);
   };
 
   useEffect(() => {
@@ -875,8 +934,33 @@ export default function Admin() {
     return () => window.removeEventListener('admin-logout', logout);
   }, []);
 
+  useEffect(() => {
+    if (!token) {
+      setCheckingSession(false);
+      return undefined;
+    }
+    let active = true;
+    setCheckingSession(true);
+    setSessionError(null);
+    api('/admin/session').catch(error => {
+      if (sessionStorage.getItem('adminToken')) {
+        sessionStorage.removeItem('adminToken');
+        setSessionError(`No se pudo validar la sesión: ${error.message}`);
+        setToken(null);
+      }
+    }).finally(() => {
+      if (active) setCheckingSession(false);
+    });
+    return () => { active = false; };
+  }, [token]);
+
+  if (checkingSession) return <p className="session-loading" role="status">Validando sesión…</p>;
   if (!token) {
-    return <Login onLogin={t => { sessionStorage.setItem('adminToken', t); setToken(t); }} />;
+    return <Login initialError={sessionError} onLogin={t => {
+      sessionStorage.setItem('adminToken', t);
+      setSessionError(null);
+      setToken(t);
+    }} />;
   }
 
   return (

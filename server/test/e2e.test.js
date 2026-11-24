@@ -109,6 +109,7 @@ test('ronda completa con varios dispositivos, contexto, anuncios y persistencia'
   });
   assert.equal(login.status, 200);
   token = (await login.json()).token;
+  assert.deepEqual(await admin('/session'), { ok: true });
   const unauth = await fetch(`${BASE}/api/admin/songs`);
   assert.equal(unauth.status, 401, 'el panel exige autenticación');
   log('login de administrador OK; /api/admin sin token → 401');
@@ -220,6 +221,33 @@ test('ronda completa con varios dispositivos, contexto, anuncios y persistencia'
   const fourth = await scr.until(() => scr.commands.at(-1).type === 'play' && scr.commands.at(-1).playId !== third.playId && scr.commands.at(-1), 'música tras el locutor');
   assert.equal(fourth.streamRef, byId[round4.candidates[1].id].stream_ref);
   log(`locutor: «${djCmd.text}»`);
+
+  // Escucha de una lista seleccionada: espera a la canción actual, respeta el orden
+  // de la lista, omite rondas mientras suena y vuelve a la programación al terminar.
+  await admin('/settings', 'PUT', { dj_enabled: false });
+  const playlistSongs = await admin(`/playlists/${playlist.id}/songs`);
+  const queued = await admin(`/playlists/${playlist.id}/play`, 'POST');
+  assert.equal(queued.playlistPlayback.name, playlist.name);
+  assert.equal(queued.playlistPlayback.current, null);
+  assert.equal(queued.playlistPlayback.remaining, playlistSongs.length);
+  assert.equal(queued.round, null, 'la ronda abierta se cancela al programar una lista');
+  let commandOffset = scr.commands.length;
+  scr.socket.emit('songEnded', { playId: fourth.playId });
+  let playlistPlay = await scr.until(() => scr.commands.slice(commandOffset).find(c => c.type === 'play'), 'primera canción de la lista');
+  for (let i = 0; i < playlistSongs.length; i++) {
+    assert.equal(playlistPlay.streamRef, playlistSongs[i].stream_ref, 'respeta el orden mostrado en la lista');
+    await scr.until(() => scr.state?.playlistPlayback?.current?.id === playlistSongs[i].id && scr.state.round === null, 'estado de reproducción de la lista');
+    if (i < playlistSongs.length - 1) {
+      const previous = playlistPlay;
+      commandOffset = scr.commands.length;
+      scr.socket.emit('songEnded', { playId: previous.playId });
+      playlistPlay = await scr.until(() => scr.commands.slice(commandOffset).find(c => c.type === 'play'), `canción ${i + 2} de la lista`);
+    }
+  }
+  commandOffset = scr.commands.length;
+  scr.socket.emit('songEnded', { playId: playlistPlay.playId });
+  await scr.until(() => scr.commands.slice(commandOffset).find(c => c.type === 'play') && scr.state?.playlistPlayback === null && scr.state?.round?.status === 'open', 'regreso a la programación normal');
+  log(`playlist «${playlist.name}»: ${playlistSongs.length} canciones en orden; programación normal reanudada`);
 
   // Persistencia: reiniciar el servidor conserva ajustes y datos
   const before = await admin('/settings');

@@ -6,11 +6,12 @@ import { importYouTubePlaylist } from '../youtube.js';
 import { exportBackup, importBackup } from '../backup.js';
 import { addSongsFromText, autotagCatalog, parseVideoId, saveSongs, searchYouTube } from '../songtools.js';
 import { previewDj } from '../dj.js';
+import { classifySongs } from '../ai.js';
 
 const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const httpError = (status, message) => Object.assign(new Error(message), { status, expose: true });
 
-function crud(r, table, defaults, onChange = () => {}, validate = () => {}) {
+function crud(r, table, defaults, onChange = () => { }, validate = () => { }) {
   const fields = Object.keys(defaults);
   const values = body => fields.map(f => (body?.[f] === undefined || body?.[f] === '' || body?.[f] === null ? defaults[f] : body[f]));
   const placeholders = fields.map((_, i) => `$${i + 1}`).join(', ');
@@ -44,10 +45,12 @@ export default function adminRoutes(director) {
   r.use(requireAdmin);
   const infoChanged = () => director.infoChanged();
 
+  r.get('/session', (_req, res) => res.json({ ok: true }));
+
   crud(r, 'songs', {
     title: null, artist: null, provider: 'youtube', stream_ref: null, genre: null, energy: null, mood: null,
     themes: [], restrictions: [], active: true,
-  }, () => {}, body => {
+  }, () => { }, body => {
     const provider = body?.provider || 'youtube';
     const ref = String(body?.stream_ref || '');
     if (!['youtube', 'licensed_audio'].includes(provider)) {
@@ -86,6 +89,39 @@ export default function adminRoutes(director) {
     res.status(201).json(await saveSongs([clean], req.body?.playlistId ? Number(req.body.playlistId) : null));
   }));
   r.post('/songs/autotag', wrap(async (_req, res) => res.json(await autotagCatalog())));
+  r.post('/songs/ai-tag', wrap(async (_req, res) => {
+    if (!process.env.GEMINI_API_KEY) throw httpError(400, 'Configura GEMINI_API_KEY en el servidor para usar la IA');
+    const { rows } = await query('SELECT id, title, artist FROM songs WHERE ai_tagged_at IS NULL ORDER BY id LIMIT 200');
+    let tagged = 0;
+    let explicit = 0;
+    let review = 0;
+    try {
+      for (let i = 0; i < rows.length; i += 25) {
+        const batch = rows.slice(i, i + 25);
+        const valid = new Set(batch.map(s => s.id));
+        for (const t of await classifySongs(batch)) {
+          if (!valid.has(t.id)) continue;
+          const restrictions = t.explicit === 'yes' ? ['explicit'] : t.explicit === 'unsure' ? ['revisar'] : [];
+          await query(
+            `UPDATE songs SET
+               genre = COALESCE(genre, $2), energy = COALESCE(energy, $3), mood = COALESCE(mood, $4),
+               themes = ARRAY(SELECT DISTINCT unnest(themes || $5::text[])),
+               restrictions = ARRAY(SELECT DISTINCT unnest(restrictions || $6::text[])),
+               ai_tagged_at = now()
+             WHERE id = $1`,
+            [t.id, t.genre || null, t.energy || null, t.mood || null, t.themes || [], restrictions],
+          );
+          tagged += 1;
+          if (t.explicit === 'yes') explicit += 1;
+          if (t.explicit === 'unsure') review += 1;
+        }
+      }
+    } catch (err) {
+      throw httpError(502, `La IA falló: ${err.message}. Canciones etiquetadas antes del error: ${tagged}.`);
+    }
+    const pending = (await query('SELECT count(*)::int AS n FROM songs WHERE ai_tagged_at IS NULL')).rows[0].n;
+    res.json({ tagged, explicit, review, pending });
+  }));
   r.post('/dj/preview', wrap(async (_req, res) => res.json(await previewDj(director))));
 
   r.post('/import/youtube-playlist', wrap(async (req, res) => {
@@ -102,6 +138,12 @@ export default function adminRoutes(director) {
       [req.params.id],
     );
     res.json(rows);
+  }));
+  r.post('/playlists/:id/play', wrap(async (req, res) => {
+    const playlistId = Number(req.params.id);
+    if (!Number.isInteger(playlistId) || playlistId < 1) throw httpError(400, 'Lista no válida');
+    await director.run(() => director.playPlaylist(playlistId));
+    res.json(director.publicState());
   }));
   r.post('/playlists/:id/songs', wrap(async (req, res) => {
     await query('INSERT INTO playlist_songs (playlist_id, song_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [req.params.id, req.body?.songId]);

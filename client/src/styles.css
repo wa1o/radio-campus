@@ -113,6 +113,8 @@ label.inline select { flex: 1; }
 .admin > .row { margin-bottom: 16px; }
 .login { max-width: 400px; margin: 12vh auto; display: flex; flex-direction: column; gap: 14px; }
 .login h1 { margin: 0; font-size: 1.8rem; }
+.login > .muted { margin: -8px 0 0; }
+.session-loading { margin: 18vh auto; text-align: center; color: var(--muted); font-weight: 650; }
 
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 8px 0 14px; }
 .section-head .count { margin-left: 6px; color: var(--muted); font-family: var(--ui); font-size: .9rem; font-weight: 600; }
@@ -317,6 +319,7 @@ td.actions button + button { margin-left: 6px; }
 .tally i { position: absolute; inset: 0 auto 0 0; background: #f2611d2e; transition: width .5s; }
 .tally.won { outline: 2px solid var(--signal); }
 .pick-next { display: flex; gap: 8px; margin-top: 12px; }
+.playlist-picker { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; margin-top: 16px; }
 .facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: 14px; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; font-weight: 600; }
