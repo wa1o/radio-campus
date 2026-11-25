@@ -217,10 +217,59 @@ td .muted { font-size: 13px; }
 .screen-status { display: flex; flex-direction: column; align-items: flex-end; gap: .8vw; align-self: start; }
 .weather { font-family: var(--display); font-size: clamp(22px, 2.2vw, 42px); font-weight: 650; }
 
-.caption { display: flex; align-items: baseline; gap: 1.4vw; padding: 1.1vw 1.6vw; border-radius: 1vw; background: var(--amber); color: var(--ink); }
-.caption.dj { background: var(--s-ink); }
-.caption-who { flex: none; padding: .3vw .8vw; border-radius: 99px; background: var(--ink); color: var(--amber); font-size: clamp(13px, 1vw, 18px); font-weight: 800; }
-.caption p { margin: 0; font-family: var(--display); font-size: clamp(18px, 1.7vw, 32px); font-weight: 550; line-height: 1.3; }
+.caption {
+  position: relative; isolation: isolate; display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center; gap: clamp(12px, 1.3vw, 20px); width: 100%; margin-top: auto;
+  padding: clamp(14px, 1.5vw, 24px); overflow: hidden;
+  border: 1px solid #ffffff3d; border-radius: 20px;
+  background: radial-gradient(circle at 0 0, #fff8, transparent 55%), linear-gradient(125deg, #ffb547, #ffe2a6);
+  color: #1c1310;
+  box-shadow: 0 16px 38px #0005; animation: caption-in .45s cubic-bezier(.2, .8, .2, 1);
+}
+.caption.dj { background: linear-gradient(125deg, #35231b, #1d1511); color: #fff7f0; }
+.caption-icon {
+  display: flex; align-items: center; justify-content: center; gap: 3px;
+  width: clamp(48px, 4vw, 68px); aspect-ratio: 1; border-radius: 50%;
+  background: #1c1310; color: #ffcf72; flex: none;
+}
+.caption-icon i { width: 3px; height: 12px; border-radius: 4px; background: currentColor; animation: caption-wave .75s ease-in-out infinite alternate; }
+.caption-icon i:nth-child(2), .caption-icon i:nth-child(4) { animation-delay: .2s; }
+.caption-icon i:nth-child(3) { height: 22px; animation-delay: .4s; }
+.caption.dj .caption-icon { background: #ffcf72; color: #241811; }
+.caption-copy { min-width: 0; }
+.caption-who { display: inline-flex; padding: 4px 10px; border-radius: 99px; background: #1c1310; color: #ffcf72; font-size: clamp(12px, .85vw, 15px); font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.caption.dj .caption-who { background: #ffcf72; color: #241811; }
+.caption p { margin: 8px 0 0; font-family: var(--display); font-size: clamp(18px, 1.45vw, 28px); font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; }
+.caption-live { display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px; border-radius: 99px; background: #1c1310; color: #ffcf72; font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+.caption-live i { width: 8px; height: 8px; border-radius: 50%; background: #e5372b; box-shadow: 0 0 0 0 #e5372b88; animation: on-air 1.8s infinite; }
+.caption.dj .caption-live { background: #fff7f01c; color: #fff7f0; }
+.ad-stage {
+  position: fixed; inset: 0; z-index: 15; display: grid; place-items: center;
+  padding: clamp(20px, 4vw, 64px); overflow: hidden;
+  background: radial-gradient(70vw 60vw at 12% 12%, #8b3a12 0, transparent 70%), linear-gradient(135deg, #21130f, #100c0a 78%);
+  color: #fff7f0;
+}
+.ad-stage::before { position: absolute; inset: 0; background: linear-gradient(115deg, transparent 35%, #ffffff08 35.1%, transparent 62%); content: ''; pointer-events: none; }
+.ad-slide {
+  position: relative; width: min(100%, 1320px); padding: clamp(24px, 5vw, 76px);
+  padding-right: clamp(190px, 22vw, 320px); animation: ad-slide-in .5s cubic-bezier(.2, .8, .2, 1);
+}
+.ad-brand { display: flex; align-items: center; gap: 10px; color: #fff7f0b8; font-size: clamp(14px, 1vw, 18px); font-weight: 700; }
+.ad-eyebrow { display: inline-flex; margin-top: clamp(30px, 5vw, 76px); padding: 8px 14px; border: 1px solid #ffcf7266; border-radius: 99px; background: #ffcf721a; color: #ffcf72; font-size: clamp(13px, 1vw, 18px); font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.ad-message { max-width: 1000px; margin: 22px 0 0; font-family: var(--display); font-size: clamp(36px, 6.4vw, 96px); font-weight: 750; line-height: 1.06; letter-spacing: -.035em; overflow-wrap: anywhere; }
+.ad-slide-footer { display: flex; align-items: center; gap: 18px; margin-top: clamp(28px, 5vw, 72px); color: #fff7f099; font-size: clamp(13px, .9vw, 16px); font-weight: 700; }
+.ad-pagination { display: flex; gap: 7px; }
+.ad-pagination i { width: 8px; height: 8px; border-radius: 99px; background: #fff7f04d; transition: width .25s, background .25s; }
+.ad-pagination i.active { width: 24px; background: #ffcf72; }
+.ad-qr {
+  position: absolute; top: clamp(16px, 2.5vw, 40px); right: clamp(16px, 2.5vw, 40px);
+  display: grid; justify-items: center; gap: 7px; width: clamp(150px, 15vw, 220px);
+  padding: clamp(12px, 1.2vw, 18px); border: 1px solid #ffffff99; border-radius: 22px;
+  background: #fff; color: #1c1310; box-shadow: 0 18px 48px #0008; text-align: center;
+}
+.ad-qr svg { display: block; width: 100%; height: auto; }
+.ad-qr strong { font-family: var(--display); font-size: clamp(18px, 1.25vw, 24px); font-weight: 750; }
+.ad-qr span { max-width: 100%; color: var(--muted); font-size: clamp(10px, .75vw, 13px); overflow-wrap: anywhere; }
 .screen-error { padding: .8vw 1.2vw; border-radius: .8vw; background: #6e1c16; color: #ffe9e6; font-size: clamp(14px, 1vw, 18px); }
 
 .screen-main { display: grid; grid-template-columns: minmax(0, 1fr) clamp(280px, 22vw, 420px); gap: 2vw; flex: 1; }
@@ -334,8 +383,9 @@ td.actions button + button { margin-left: 6px; }
   .screen-round { min-height: 0; }
   .screen-side { min-height: 0; overflow: hidden; }
 }
-.caption { position: fixed; left: 2.6vw; right: 2.6vw; bottom: 2.4vw; z-index: 10; box-shadow: 0 1vw 3vw #000a; animation: caption-in .5s cubic-bezier(.2, .8, .2, 1); }
-@keyframes caption-in { from { transform: translateY(140%); } }
+@keyframes caption-in { from { opacity: 0; transform: translateY(12px); } }
+@keyframes caption-wave { to { transform: scaleY(.5); } }
+@keyframes ad-slide-in { from { opacity: 0; transform: translateX(24px); } }
 
 /* Botón para desbloquear el audio: siempre visible, encima de todo. */
 .unlock { position: fixed; bottom: 2.4vw; left: 50%; z-index: 20; display: flex; align-items: center; gap: 1.2vw; padding: .8vw .8vw .8vw 1.6vw; transform: translateX(-50%); border-radius: 99px; background: var(--s-ink, #fff7f0); color: var(--ink); box-shadow: 0 1vw 3vw #000c; }
@@ -408,8 +458,24 @@ td.actions button + button { margin-left: 6px; }
   .ticket { flex-direction: column; gap: 10px; padding: 16px; }
   .ticket svg { width: 132px; }
   .ticket p { text-align: center; }
-  .caption { left: 12px; right: 12px; bottom: 12px; gap: 8px; padding: 12px; border-radius: 12px; }
-  .caption p { font-size: 17px; }
+  .caption { grid-template-columns: 44px minmax(0, 1fr); gap: 10px 12px; padding: 14px; border-radius: 16px; }
+  .caption-icon { grid-row: 1 / span 2; width: 44px; }
+  .caption-copy { grid-column: 2; }
+  .caption-who { font-size: 11px; }
+  .caption p { margin-top: 6px; font-size: 17px; }
+  .caption-live { grid-column: 2; justify-self: start; padding: 5px 9px; }
+  .ad-stage { align-items: stretch; padding: 16px; }
+  .ad-slide { align-self: center; padding: 0 clamp(142px, 42vw, 178px) 0 0; }
+  .ad-brand { font-size: 13px; }
+  .ad-eyebrow { margin-top: 32px; padding: 7px 10px; font-size: 10px; letter-spacing: .08em; }
+  .ad-message { margin-top: 16px; font-size: clamp(30px, 8vw, 48px); }
+  .ad-slide-footer { gap: 10px; margin-top: 30px; font-size: 12px; }
+  .ad-pagination { gap: 5px; }
+  .ad-pagination i { width: 6px; height: 6px; }
+  .ad-pagination i.active { width: 17px; }
+  .ad-qr { top: 16px; right: 16px; width: clamp(124px, 38vw, 152px); gap: 5px; padding: 10px; border-radius: 16px; }
+  .ad-qr strong { font-size: 16px; }
+  .ad-qr span { font-size: 10px; }
   .unlock { left: 12px; right: 12px; bottom: 12px; flex-direction: column; align-items: stretch; gap: 8px; padding: 12px; transform: none; border-radius: 16px; }
   .unlock p { order: 0; text-align: center; font-size: 13px; }
   .unlock .screen-audio-button { width: 100%; padding: 12px 16px; }
@@ -421,6 +487,9 @@ td.actions button + button { margin-left: 6px; }
   .cover { width: 64px; }
   .contender img { width: 58px; }
   .duel-bar small { font-size: 10px; }
+  .ad-slide { padding-right: 130px; }
+  .ad-message { font-size: 28px; }
+  .ad-qr { width: 118px; }
 }
 
 .screen-key-form {

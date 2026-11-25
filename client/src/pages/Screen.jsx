@@ -25,6 +25,84 @@ const formatTime = value => {
 };
 
 const screenKeyStorage = 'radio-campus-screen-key';
+const AD_SLIDE_DURATION_MS = 5000;
+
+function AdSlideshow({ notices, voteUrl, active, announcementId }) {
+  const slides = [...new Set(notices.filter(Boolean))];
+  const signature = slides.join('\u0000');
+  const [displaySlides, setDisplaySlides] = useState([]);
+  const [visible, setVisible] = useState(false);
+  const [now, setNow] = useState(0);
+  const startedAt = useRef(0);
+
+  useEffect(() => {
+    if (active) setDisplaySlides(slides);
+  }, [active, signature]);
+
+  useEffect(() => {
+    if (active) {
+      const start = Date.now();
+      startedAt.current = start;
+      setNow(start);
+      setVisible(true);
+      let timer;
+      let cancelled = false;
+      const scheduleNextSlide = () => {
+        const elapsed = Date.now() - start;
+        const delay = AD_SLIDE_DURATION_MS - (elapsed % AD_SLIDE_DURATION_MS);
+        timer = setTimeout(() => {
+          if (cancelled) return;
+          setNow(Date.now());
+          scheduleNextSlide();
+        }, delay);
+      };
+      scheduleNextSlide();
+      return () => {
+        cancelled = true;
+        clearTimeout(timer);
+      };
+    }
+
+    if (!startedAt.current) return undefined;
+    const elapsed = Math.max(0, Date.now() - startedAt.current);
+    const elapsedInSlide = elapsed % AD_SLIDE_DURATION_MS;
+    const remaining = elapsedInSlide === 0 ? 0 : AD_SLIDE_DURATION_MS - elapsedInSlide;
+    if (!remaining) {
+      startedAt.current = 0;
+      setVisible(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      startedAt.current = 0;
+      setVisible(false);
+    }, remaining);
+    return () => clearTimeout(timer);
+  }, [active, announcementId]);
+
+  if (!visible || !displaySlides.length) return null;
+  const activeIndex = Math.floor((now - startedAt.current) / AD_SLIDE_DURATION_MS) % displaySlides.length;
+
+  return (
+    <div className="ad-stage">
+      <article className="ad-slide" key={`${displaySlides.join('\u0000')}-${activeIndex}`} aria-live="polite">
+        <span className="ad-brand"><span className="on-air-dot live" /> Radio del campus</span>
+        <span className="ad-eyebrow">Anuncio del campus</span>
+        <p className="ad-message">{displaySlides[activeIndex]}</p>
+        <div className="ad-slide-footer">
+          <span>{`Mensaje ${activeIndex + 1} de ${displaySlides.length}`}</span>
+          <div className="ad-pagination" aria-hidden="true">
+            {displaySlides.map((slide, i) => <i key={`${i}-${slide}`} className={i === activeIndex ? 'active' : ''} />)}
+          </div>
+        </div>
+      </article>
+      <aside className="ad-qr" aria-label="Código QR para votar">
+        <QRCodeSVG value={voteUrl} size={200} marginSize={0} bgColor="#ffffff" fgColor="#1c1310" />
+        <strong>Escanea y vota</strong>
+        <span>{voteUrl.replace(/^https?:\/\//, '')}</span>
+      </aside>
+    </div>
+  );
+}
 
 export default function Screen() {
   const queryKey = new URLSearchParams(window.location.search).get('key');
@@ -370,6 +448,10 @@ function ScreenLive({ screenKey, storageWarning, onResetScreenKey }) {
   const voteUrl = `${window.location.origin}/vote`;
   const now = state?.nowPlaying;
   const speaking = state?.phase === 'announcement' ? state.announcement : null;
+  const adOnAir = speaking && speaking.kind !== 'dj';
+  const adSlides = adOnAir
+    ? [...new Set([speaking.text, ...(state?.info?.notices ?? [])].filter(Boolean))]
+    : [];
   const [a, b] = round?.candidates ?? [];
   const pctA = total ? Math.round(((round.counts[a.id] ?? 0) * 100) / total) : 50;
   // Cada lado conserva un mínimo visible para que sus datos no se recorten.
@@ -412,12 +494,6 @@ function ScreenLive({ screenKey, storageWarning, onResetScreenKey }) {
             {state.nowPlaying?.provider !== 'licensed_audio' && !playerReady ? 'Cargando reproductor…' : 'Activar audio'}
           </button>
           <p>El navegador necesita un clic para reproducir sonido.</p>
-        </div>
-      )}
-      {speaking && (
-        <div className={`caption ${speaking.kind === 'dj' ? 'dj' : ''}`} role="status" aria-live="polite">
-          <span className="caption-who">{speaking.kind === 'dj' ? 'Locutor' : 'Aviso'}</span>
-          <p>{speaking.text}</p>
         </div>
       )}
       {(playbackMessage || state?.lastError) && (
@@ -464,6 +540,18 @@ function ScreenLive({ screenKey, storageWarning, onResetScreenKey }) {
           ) : (
             <p className="hint">Preparando las siguientes opciones…</p>
           )}
+          {speaking && (
+            <div className={`caption ${speaking.kind === 'dj' ? 'dj' : ''}`} role="status" aria-live="polite">
+              <span className="caption-icon" aria-hidden="true">
+                <i /><i /><i /><i /><i />
+              </span>
+              <div className="caption-copy">
+                <span className="caption-who">{speaking.kind === 'dj' ? 'Locutor en vivo' : 'Aviso del campus'}</span>
+                <p>{speaking.text}</p>
+              </div>
+              <span className="caption-live"><i /> Al aire</span>
+            </div>
+          )}
         </section>
 
         <aside className="screen-side">
@@ -490,6 +578,12 @@ function ScreenLive({ screenKey, storageWarning, onResetScreenKey }) {
           )}
         </aside>
       </main>
+      <AdSlideshow
+        notices={adSlides}
+        voteUrl={voteUrl}
+        active={Boolean(adOnAir)}
+        announcementId={adOnAir ? speaking.id : null}
+      />
     </div>
   );
 }

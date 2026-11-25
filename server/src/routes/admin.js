@@ -6,7 +6,8 @@ import { importYouTubePlaylist } from '../youtube.js';
 import { exportBackup, importBackup } from '../backup.js';
 import { addSongsFromText, autotagCatalog, parseVideoId, saveSongs, searchYouTube } from '../songtools.js';
 import { previewDj } from '../dj.js';
-import { classifySongs } from '../ai.js';
+import { classifySongs, isUnknownArtist, UNKNOWN_ARTISTS } from '../ai.js';
+import express from 'express';
 
 const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const httpError = (status, message) => Object.assign(new Error(message), { status, expose: true });
@@ -93,25 +94,31 @@ export default function adminRoutes(director) {
     if (!process.env.GEMINI_API_KEY) throw httpError(400, 'Configura GEMINI_API_KEY en el servidor para usar la IA');
     const { rows } = await query('SELECT id, title, artist FROM songs WHERE ai_tagged_at IS NULL ORDER BY id LIMIT 200');
     let tagged = 0;
+    let artists = 0;
     let explicit = 0;
     let review = 0;
     try {
       for (let i = 0; i < rows.length; i += 25) {
         const batch = rows.slice(i, i + 25);
-        const valid = new Set(batch.map(s => s.id));
+        const songsById = new Map(batch.map(song => [song.id, song]));
         for (const t of await classifySongs(batch)) {
-          if (!valid.has(t.id)) continue;
+          const song = songsById.get(t.id);
+          if (!song) continue;
+          const proposedArtist = typeof t.artist === 'string' ? t.artist.trim().slice(0, 200) : '';
+          const artist = isUnknownArtist(song.artist) && !isUnknownArtist(proposedArtist) ? proposedArtist : null;
           const restrictions = t.explicit === 'yes' ? ['explicit'] : t.explicit === 'unsure' ? ['revisar'] : [];
-          await query(
+          const result = await query(
             `UPDATE songs SET
-               genre = COALESCE(genre, $2), energy = COALESCE(energy, $3), mood = COALESCE(mood, $4),
-               themes = ARRAY(SELECT DISTINCT unnest(themes || $5::text[])),
-               restrictions = ARRAY(SELECT DISTINCT unnest(restrictions || $6::text[])),
+               artist = CASE WHEN $2::text IS NOT NULL AND lower(btrim(artist)) = ANY($8::text[]) THEN $2 ELSE artist END,
+               genre = COALESCE(genre, $3), energy = COALESCE(energy, $4), mood = COALESCE(mood, $5),
+               themes = ARRAY(SELECT DISTINCT unnest(themes || $6::text[])),
+               restrictions = ARRAY(SELECT DISTINCT unnest(restrictions || $7::text[])),
                ai_tagged_at = now()
              WHERE id = $1`,
-            [t.id, t.genre || null, t.energy || null, t.mood || null, t.themes || [], restrictions],
+            [t.id, artist, t.genre || null, t.energy || null, t.mood || null, t.themes || [], restrictions, UNKNOWN_ARTISTS],
           );
           tagged += 1;
+          if (result.rowCount && artist) artists += 1;
           if (t.explicit === 'yes') explicit += 1;
           if (t.explicit === 'unsure') review += 1;
         }
@@ -120,7 +127,8 @@ export default function adminRoutes(director) {
       throw httpError(502, `La IA falló: ${err.message}. Canciones etiquetadas antes del error: ${tagged}.`);
     }
     const pending = (await query('SELECT count(*)::int AS n FROM songs WHERE ai_tagged_at IS NULL')).rows[0].n;
-    res.json({ tagged, explicit, review, pending });
+    const artistPending = (await query('SELECT count(*)::int AS n FROM songs WHERE lower(btrim(artist)) = ANY($1::text[])', [UNKNOWN_ARTISTS])).rows[0].n;
+    res.json({ tagged, artists, explicit, review, pending, artistPending });
   }));
   r.post('/dj/preview', wrap(async (_req, res) => res.json(await previewDj(director))));
 

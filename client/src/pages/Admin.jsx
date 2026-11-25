@@ -370,8 +370,10 @@ function Songs() {
     setTagMsg('La IA está revisando el catálogo…');
     const out = await api('/admin/songs/ai-tag', { method: 'POST' }).catch(err => { setTagMsg(null); throw err; });
     setTagMsg(out.tagged
-      ? `La IA etiquetó ${out.tagged} canciones: ${out.explicit} explícitas y ${out.review} por revisar.${out.pending ? ` Faltan ${out.pending}; vuelve a pulsar el botón.` : ''}`
-      : 'Todas las canciones ya fueron revisadas por la IA.');
+      ? `La IA revisó ${out.tagged} canciones e identificó ${out.artists} artistas: ${out.explicit} explícitas y ${out.review} por revisar.${out.artistPending ? ` ${out.artistPending} artistas siguen sin identificar.` : ''}${out.pending ? ` Faltan ${out.pending}; vuelve a pulsar el botón.` : ''}`
+      : out.artistPending
+        ? `La IA no encontró nombres confiables para ${out.artistPending} canciones; completa esos artistas manualmente.`
+        : 'Todas las canciones ya fueron revisadas por la IA.');
   }).catch(() => setTagMsg(null));
   return (
     <>
@@ -380,7 +382,7 @@ function Songs() {
       <Crud resource="songs" title="Canciones" fields={songFields} refreshKey={refreshKey}
         headerExtra={run => (
           <>
-            <button className="secondary" onClick={() => aiTag(run)} title="Llena etiquetas vacías, temáticas de época y marca explícitas o dudosas">Etiquetar con IA</button>
+            <button className="secondary" onClick={() => aiTag(run)} title="Completa artistas desconocidos, sugiere etiquetas y marca contenido explícito o dudoso">Etiquetar con IA</button>
             <button className="secondary" onClick={() => autotag(run)} title="Llena género, energía y ambiente vacíos">Completar etiquetas</button>
           </>
         )}

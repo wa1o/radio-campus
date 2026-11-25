@@ -15,6 +15,8 @@ export const DEFAULTS = {
   dj_station_name: 'Radio del campus',
   dj_voice: '',
   dj_rate: 1,
+  flyer_every_seconds: 45,
+  flyer_show_seconds: 8,
 };
 
 export async function getSettings() {

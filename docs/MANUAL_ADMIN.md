@@ -32,7 +32,7 @@ En **Canciones → Agregar canciones** hay tres formas; en todas se llenan solos
 
 Opcionalmente elige una lista para que las nuevas canciones también se agreguen a ella.
 
-Las etiquetas sugeridas salen de las categorías de YouTube (con clave), de palabras del título (cumbia, corrido, lofi, remix, acústico, navidad…) y, si el servidor tiene `GEMINI_API_KEY`, de la IA. **Completar etiquetas** llena género, energía y ambiente vacíos de todo el catálogo sin tocar lo que ya editaste. Son sugerencias: revísalas, sobre todo las restricciones.
+Las etiquetas sugeridas salen de las categorías de YouTube (con clave), de palabras del título (cumbia, corrido, lofi, remix, acústico, navidad…) y, si el servidor tiene `GEMINI_API_KEY`, de la IA. **Etiquetar con IA** también intenta identificar artistas que aparecen como «Desconocido» o «Canal de YouTube»; conserva los nombres ya registrados y deja sin cambios los que no puede identificar con confianza. Revisa sus sugerencias antes de usarlas. **Completar etiquetas** llena género, energía y ambiente vacíos de todo el catálogo sin tocar lo que ya editaste.
 
 **Traer playlist de YouTube**: pega el enlace de una playlist pública; se importan hasta 500 videos y se crea automáticamente una lista con ellos. Los videos que YouTube marca como restringidos por edad reciben la restricción `explicit`; con el ajuste predeterminado quedan fuera de las rondas, incluida la lista de respaldo. Esa marca es una señal aproximada, no una detección de letras, así que revisa las etiquetas en el catálogo. Después edita cada canción para agregar las demás etiquetas. Desactiva (no borres) las canciones que ya no quieras ofrecer; las que tienen historial no se pueden eliminar.
 
